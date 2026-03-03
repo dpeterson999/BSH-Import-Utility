@@ -311,6 +311,26 @@ namespace BSH_Import_Utility
             );
         }
 
+        private void viewImportLogToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            string logPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "BSH Import Tool",
+                "import_log.txt");
+
+            if (!File.Exists(logPath))
+            {
+                MessageBox.Show(
+                    "No import log found. The log is created after the first import.",
+                    "Import Log",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                return;
+            }
+
+            System.Diagnostics.Process.Start(logPath);
+        }
+
         private void exitToolStripMenuItem_Click(object sender, EventArgs e)
         {
             Application.Exit();

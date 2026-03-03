@@ -7,7 +7,9 @@ namespace BSH_Import_Utility.Infrastructure
     public static class ImportLogger
     {
         private static readonly string LogPath = Path.Combine(
-            AppDomain.CurrentDomain.BaseDirectory, "import_log.txt");
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "BSH Import Tool",
+            "import_log.txt");
 
         private const int MaxLogSizeBytes = 1024 * 1024; // 1 MB
 
@@ -23,6 +25,7 @@ namespace BSH_Import_Utility.Infrastructure
 
         public static void Log(string message)
         {
+            Directory.CreateDirectory(Path.GetDirectoryName(LogPath)!);
             File.AppendAllText(LogPath,
                 $"  {DateTime.Now:HH:mm:ss} {message}{Environment.NewLine}");
         }
