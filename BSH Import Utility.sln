@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.37012.4 d17.14
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BSH Import Utility", "BSH Import Utility.csproj", "{8FE49D89-6ED7-4132-8DFA-494C62E570F0}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Debug|x64 = Debug|x64
+		Release|Any CPU = Release|Any CPU
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{8FE49D89-6ED7-4132-8DFA-494C62E570F0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8FE49D89-6ED7-4132-8DFA-494C62E570F0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8FE49D89-6ED7-4132-8DFA-494C62E570F0}.Debug|x64.ActiveCfg = Debug|x64
+		{8FE49D89-6ED7-4132-8DFA-494C62E570F0}.Debug|x64.Build.0 = Debug|x64
+		{8FE49D89-6ED7-4132-8DFA-494C62E570F0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8FE49D89-6ED7-4132-8DFA-494C62E570F0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8FE49D89-6ED7-4132-8DFA-494C62E570F0}.Release|x64.ActiveCfg = Release|x64
+		{8FE49D89-6ED7-4132-8DFA-494C62E570F0}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {BFD512CB-95BA-420F-BD67-A4746285321C}
+	EndGlobalSection
+EndGlobal
