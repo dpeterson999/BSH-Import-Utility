@@ -61,7 +61,7 @@ namespace BSH_Import_Utility.Data
                             if (string.IsNullOrWhiteSpace(columnName) ||
                                 ImportConstants.IgnoredColumns.Contains(columnName.Trim()))
                             {
-                                //ImportLogger.Log($"Ignored column: {columnName}");
+                                // ImportLogger.Log($"Ignored column: {columnName}");
                                 continue;
                             }
 
@@ -185,7 +185,7 @@ namespace BSH_Import_Utility.Data
             OleDbConnection connection,
             OleDbTransaction transaction)
         {
-            // Insert BSH first (other tables have a foreign key dependency on it),
+            // Insert BSH table first (other tables have a FK dependency on it),
             // then insert all remaining tables. OrderBy ensures BSH sorts before
             // everything else without modifying the dictionaries.
             foreach (var table in columnsByTable.Keys.OrderBy(t => t == "BSH" ? 0 : 1))

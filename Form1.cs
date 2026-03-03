@@ -18,8 +18,6 @@ namespace BSH_Import_Utility
     public partial class Form1 : Form
     {
         private string dbPath = Properties.Settings.Default.DatabasePath;
-
-        // Keep readonly like your original pattern; built once at startup.
         private readonly string connectionString = null!;
 
         // Loaded from JSON config at startup
@@ -33,7 +31,7 @@ namespace BSH_Import_Utility
         {
             InitializeComponent();
 
-            // Load mapping config (UI errors stay in Form1)
+            // Load mapping config
             try
             {
                 columnToTableMap = ColumnMapLoader.Load("columnToTableMap.json");
@@ -45,7 +43,7 @@ namespace BSH_Import_Utility
                 return;
             }
 
-            // Resolve DB path (same flow as your original, but avoids shadowing the field)
+            // Resolve DB path
             dbPath = Properties.Settings.Default.DatabasePath;
 
             // Check if the path is null, empty, or not reachable
@@ -94,7 +92,10 @@ namespace BSH_Import_Utility
                     }
                 }
             }
-
+            
+            //
+            // Requires Microsoft Access Database Engine 2016 x64
+            //
             connectionString = $@"Provider=Microsoft.ACE.OLEDB.16.0;Data Source={dbPath};Persist Security Info=False;";
 
             // Wire services
