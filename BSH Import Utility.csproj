@@ -27,7 +27,8 @@
     <MapFileExtensions>true</MapFileExtensions>
     <InstallUrl>https://dpeterson999.github.io/BSH-Import-Utility/</InstallUrl>
     <UpdateUrl>https://dpeterson999.github.io/BSH-Import-Utility/</UpdateUrl>
-    <ApplicationRevision>11</ApplicationRevision>
+    <ProductName>BSH Import Utility</ProductName>
+    <ApplicationRevision>12</ApplicationRevision>
     <ApplicationVersion>1.0.0.%2a</ApplicationVersion>
     <UseApplicationTrust>false</UseApplicationTrust>
     <PublishWizardCompleted>true</PublishWizardCompleted>
@@ -83,6 +84,9 @@
   </PropertyGroup>
   <PropertyGroup>
     <SignManifests>true</SignManifests>
+  </PropertyGroup>
+  <PropertyGroup>
+    <ApplicationIcon>Icon.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="BouncyCastle.Cryptography, Version=2.0.0.0, Culture=neutral, PublicKeyToken=072edcf4a5328938, processorArchitecture=MSIL">
@@ -217,6 +221,7 @@
     <Compile Include="SelectableMessageForm.Designer.cs" />
     <Compile Include="Services\PdfImportService.cs" />
     <Compile Include="Services\PdfSplitService.cs" />
+    <Content Include="Icon.ico" />
     <EmbeddedResource Include="Form1.resx">
       <DependentUpon>Form1.cs</DependentUpon>
     </EmbeddedResource>
