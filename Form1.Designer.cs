@@ -29,6 +29,7 @@ namespace BSH_Import_Utility
             this.accessDatabaseLocationToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.ignoredColumnsToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.viewImportLogToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.refreshToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.exitToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.panel1 = new System.Windows.Forms.Panel();
             this.panel2 = new System.Windows.Forms.Panel();
@@ -80,6 +81,7 @@ namespace BSH_Import_Utility
             this.menuToolStripMenuItem.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
             this.accessDatabaseLocationToolStripMenuItem,
             this.ignoredColumnsToolStripMenuItem,
+            this.refreshToolStripMenuItem,
             this.viewImportLogToolStripMenuItem,
             this.exitToolStripMenuItem});
             this.menuToolStripMenuItem.Name = "menuToolStripMenuItem";
@@ -100,12 +102,19 @@ namespace BSH_Import_Utility
             this.ignoredColumnsToolStripMenuItem.Text = "Ignored Columns";
             this.ignoredColumnsToolStripMenuItem.Click += new System.EventHandler(this.btnShowIgnoredColumns_Click);
             // 
-            // exitToolStripMenuItem
+            // viewImportLogStripMenuItem
             // 
             this.viewImportLogToolStripMenuItem.Name = "viewImportLogToolStripMenuItem";
             this.viewImportLogToolStripMenuItem.Size = new System.Drawing.Size(210, 22);
             this.viewImportLogToolStripMenuItem.Text = "View Import Log";
             this.viewImportLogToolStripMenuItem.Click += new System.EventHandler(this.viewImportLogToolStripMenuItem_Click);
+            //
+            // refreshToolStringMenuItem
+            //
+            this.refreshToolStripMenuItem.Name = "refreshToolStripMenuItem";
+            this.refreshToolStripMenuItem.Size = new System.Drawing.Size(210, 22);
+            this.refreshToolStripMenuItem.Text = "Refresh Grid - F5";
+            this.refreshToolStripMenuItem.Click += new System.EventHandler(this.refreshToolStripMenuItem_Click);
             // 
             // exitToolStripMenuItem
             // 
@@ -169,6 +178,7 @@ namespace BSH_Import_Utility
         private ToolStripMenuItem accessDatabaseLocationToolStripMenuItem;
         private ToolStripMenuItem ignoredColumnsToolStripMenuItem;
         private ToolStripMenuItem viewImportLogToolStripMenuItem;
+        private ToolStripMenuItem refreshToolStripMenuItem;
         private Panel panel1;
         private Panel panel2;
         private ToolStripMenuItem exitToolStripMenuItem;

@@ -332,6 +332,22 @@ namespace BSH_Import_Utility
             System.Diagnostics.Process.Start(logPath);
         }
 
+        protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+        {
+            if (keyData == Keys.F5 && ImportOrderForm.Enabled)
+            {
+                LoadGrid();
+                return true;
+            }
+            return base.ProcessCmdKey(ref msg, keyData);
+        }
+
+        private void refreshToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            if (ImportOrderForm.Enabled)
+                LoadGrid();
+        }
+
         private void exitToolStripMenuItem_Click(object sender, EventArgs e)
         {
             Application.Exit();
