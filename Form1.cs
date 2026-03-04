@@ -17,13 +17,10 @@ namespace BSH_Import_Utility
 {
     public partial class Form1 : Form
     {
-        private string dbPath = Properties.Settings.Default.DatabasePath;
+        // Initializations
+        private string? dbPath = Properties.Settings.Default.DatabasePath;
         private readonly string connectionString = null!;
-
-        // Loaded from JSON config at startup
         private readonly Dictionary<string, (string TableName, string ColumnName)> columnToTableMap = null!;
-
-        // Services
         private readonly AccessRepository _repo = null!;
         private readonly PdfImportService _pdfService = null!;
 
@@ -31,7 +28,7 @@ namespace BSH_Import_Utility
         {
             InitializeComponent();
 
-            // Load mapping config
+            // Load mapping config file.  If this file does not load, tables cannot be populated with records
             try
             {
                 columnToTableMap = ColumnMapLoader.Load("columnToTableMap.json");
@@ -46,53 +43,10 @@ namespace BSH_Import_Utility
             // Resolve DB path
             dbPath = Properties.Settings.Default.DatabasePath;
 
-            // Check if the path is null, empty, or not reachable
+            // Ensure a DB is selected
             if (string.IsNullOrEmpty(dbPath) || !File.Exists(dbPath))
-            {
-                // Prompt the user to select the database
-                using (OpenFileDialog openFileDialog = new())
-                {
-                    openFileDialog.Filter = "Access Database (*.mdb;*.accdb)|*.mdb;*.accdb";
-                    if (openFileDialog.ShowDialog() == DialogResult.OK)
-                    {
-                        dbPath = openFileDialog.FileName;
-                        Properties.Settings.Default.DatabasePath = dbPath;
-                        Properties.Settings.Default.Save();
-                        MessageBox.Show($"Database path saved: {dbPath}");
-                    }
-                    else
-                    {
-                        MessageBox.Show("Database path is required. Application will now exit.");
-                        Application.Exit();
-                        return;
-                    }
-                }
-            }
+                dbPath = PromptForDatabasePath();
 
-            // Check if the selected path is reachable, if not prompt again
-            if (!File.Exists(dbPath))
-            {
-                MessageBox.Show("The selected database path is not accessible. Please select a valid database.");
-
-                using (OpenFileDialog openFileDialog = new())
-                {
-                    openFileDialog.Filter = "Access Database (*.mdb;*.accdb)|*.mdb;*.accdb";
-                    if (openFileDialog.ShowDialog() == DialogResult.OK)
-                    {
-                        dbPath = openFileDialog.FileName;
-                        Properties.Settings.Default.DatabasePath = dbPath;
-                        Properties.Settings.Default.Save();
-                        MessageBox.Show($"Database path saved: {dbPath}");
-                    }
-                    else
-                    {
-                        MessageBox.Show("Database path is required. Application will now exit.");
-                        Application.Exit();
-                        return;
-                    }
-                }
-            }
-            
             //
             // Requires Microsoft Access Database Engine 2016 x64
             //
@@ -104,6 +58,32 @@ namespace BSH_Import_Utility
 
             UpdateWindowTitle();
             LoadGrid();
+        }
+
+        private string PromptForDatabasePath()
+        {
+            while (true)
+            {
+                using var openFileDialog = new OpenFileDialog
+                {
+                    Filter = "Access Database (*.mdb;*.accdb)|*.mdb;*.accdb",
+                    Title = "Select Access Database"
+                };
+
+                if (openFileDialog.ShowDialog() == DialogResult.OK && File.Exists(openFileDialog.FileName))
+                {
+                    string path = openFileDialog.FileName;
+                    Properties.Settings.Default.DatabasePath = path;
+                    Properties.Settings.Default.Save();
+                    return path;
+                }
+
+                MessageBox.Show(
+                    "A valid Access Database is required to run this application. Please select a file.",
+                    "Database Required",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            }
         }
 
         private void UpdateWindowTitle()
