@@ -116,6 +116,7 @@ namespace BSH_Import_Utility
             var allFiles = new List<string>();
             var tempFiles = new List<string>();
             var duplicates = new List<string>();
+            var sourceFileMap = new Dictionary<string, string>(); // temp file → original source file
 
             ImportLogger.BeginSession(allFiles.Count);
 
@@ -142,6 +143,9 @@ namespace BSH_Import_Utility
                         var split = PdfSplitService.FlattenAndSplitTwoPages(file, startPage);
                         allFiles.AddRange(split);
                         tempFiles.AddRange(split);
+
+                        foreach (var s in split)
+                            sourceFileMap[s] = file;
                     }
                     else
                     {
@@ -175,7 +179,12 @@ namespace BSH_Import_Utility
                         continue;
                     }
 
-                    var outcome = _repo.InsertDataIntoDatabase(processedLines.ToArray(), file);
+                    // Resolve the display name — use original picklist name if this is a temp file
+                    string displayFile = sourceFileMap.TryGetValue(file, out var sourceFile)
+                        ? sourceFile
+                        : file;
+
+                    var outcome = _repo.InsertDataIntoDatabase(processedLines.ToArray(), displayFile);
 
                     switch (outcome.Status)
                     {
@@ -310,22 +319,6 @@ namespace BSH_Import_Utility
             }
 
             System.Diagnostics.Process.Start(logPath);
-        }
-
-        protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
-        {
-            if (keyData == Keys.F5 && ImportOrderForm.Enabled)
-            {
-                LoadGrid();
-                return true;
-            }
-            return base.ProcessCmdKey(ref msg, keyData);
-        }
-
-        private void refreshToolStripMenuItem_Click(object sender, EventArgs e)
-        {
-            if (ImportOrderForm.Enabled)
-                LoadGrid();
         }
 
         private void exitToolStripMenuItem_Click(object sender, EventArgs e)
