@@ -117,7 +117,8 @@ namespace BSH_Import_Utility.Data
                             return new InsertOutcome
                             {
                                 Status = InsertStatus.InvalidFile,
-                                OrderNumber = orderNumber
+                                OrderNumber = orderNumber,
+                                FileName = fileName
                             };
                         }
 

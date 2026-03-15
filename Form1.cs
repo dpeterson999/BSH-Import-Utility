@@ -224,8 +224,16 @@ namespace BSH_Import_Utility
                             break;
 
                         case InsertStatus.InvalidFile:
+                            string invalidFileLabel = string.IsNullOrWhiteSpace(outcome.FileName)
+                                ? Path.GetFileName(file)
+                                : Path.GetFileName(outcome.FileName);
+
+                            string invalidOrderLabel = string.IsNullOrWhiteSpace(outcome.OrderNumber)
+                                ? ""
+                                : $"Order {outcome.OrderNumber}\n";
+
                             MessageBox.Show(
-                                $"The file does not appear to contain a valid order:\n{Path.GetFileName(file)}",
+                                $"{invalidOrderLabel}An order in the following file could not be processed:\n\n{invalidFileLabel}",
                                 "Invalid File", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                             break;
                     }
