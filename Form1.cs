@@ -118,8 +118,6 @@ namespace BSH_Import_Utility
             var duplicates = new List<string>();
             var sourceFileMap = new Dictionary<string, string>(); // temp file → original source file
 
-            ImportLogger.BeginSession(allFiles.Count);
-
             ImportOrderForm.Enabled = false;
 
             try
@@ -157,6 +155,8 @@ namespace BSH_Import_Utility
                 int successfulImports = 0;
 
                 if (totalFiles == 0) return;
+
+                ImportLogger.BeginSession(allFiles.Count);
 
                 progressBarImport.Visible = true;
                 progressBarImport.Minimum = 0;

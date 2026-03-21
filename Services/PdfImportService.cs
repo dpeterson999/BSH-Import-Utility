@@ -12,6 +12,7 @@ namespace BSH_Import_Utility.Services
 {
     public class PdfImportService
     {
+        private static readonly Regex EmailRegex = new Regex(@"^[^@\s]+@[^@\s]+\.[^@\s]+$",RegexOptions.Compiled | RegexOptions.IgnoreCase);
         public List<ProcessedLine> ParsePdfFile(string filePath)
         {
             var processedLines = new List<ProcessedLine>();
@@ -142,7 +143,7 @@ namespace BSH_Import_Utility.Services
 
         private bool IsValidEmail(string input)
         {
-            return Regex.IsMatch(input, @"^[^@\s]+@[^@\s]+\.[^@\s]+$");
+            return EmailRegex.IsMatch(input);
         }
 
         private bool IsWardLine(string line)

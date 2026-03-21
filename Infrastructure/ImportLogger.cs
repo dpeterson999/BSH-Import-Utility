@@ -8,6 +8,8 @@ namespace BSH_Import_Utility.Infrastructure
 {
     public static class ImportLogger
     {
+        private static bool _directoryEnsured = false;
+
         private static readonly string LogPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "BSH Import Tool",
@@ -17,7 +19,9 @@ namespace BSH_Import_Utility.Infrastructure
 
         private static void EnsureDirectoryExists()
         {
+            if (_directoryEnsured) return;
             Directory.CreateDirectory(Path.GetDirectoryName(LogPath)!);
+            _directoryEnsured = true;
         }
 
         public static void BeginSession(int fileCount)
@@ -27,7 +31,7 @@ namespace BSH_Import_Utility.Infrastructure
             File.AppendAllText(LogPath,
                 $"{Environment.NewLine}" +
                 $"========================================{Environment.NewLine}" +
-                $"Import Session — {DateTime.Now:yyyy-MM-dd HH:mm:ss} — {fileCount} file(s){Environment.NewLine}" +
+                $"Import Session — {DateTime.Now:yyyy-MM-dd HH:mm:ss} — {fileCount} order(s){Environment.NewLine}" +
                 $"========================================{Environment.NewLine}");
         }
 

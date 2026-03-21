@@ -8,12 +8,15 @@ using System.Data.OleDb;
 using System.IO;
 using System.Linq;
 
+#nullable enable
+
 namespace BSH_Import_Utility.Data
 {
     public class AccessRepository
     {
         private readonly string _connectionString;
         private readonly Dictionary<string, (string TableName, string ColumnName)> _columnToTableMap;
+        private Dictionary<string, List<string>>? _cachedTableColumns;
 
         public AccessRepository(string connectionString,
             Dictionary<string, (string TableName, string ColumnName)> columnToTableMap)
@@ -38,7 +41,7 @@ namespace BSH_Import_Utility.Data
 
         public InsertOutcome InsertDataIntoDatabase(ProcessedLine[] processedLines, string fileName)
         {
-            var tableColumns = GetTableColumns();
+            var tableColumns = _cachedTableColumns ??= GetTableColumns();
             var columnsByTable = new Dictionary<string, List<string>>();
             var valuesByTable = new Dictionary<string, List<object>>();
             var missingColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
