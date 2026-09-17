@@ -16,5 +16,9 @@ namespace BSH_Import_Utility.Domain
         public const string EmailLabel = "Notify via Email (address below)";
         public const string StorehouseLabel = "Storehouse | Pickup location";
         public const string TextLabel = "Notify via Text (# below)";
+
+        public const string BshTableName = "BSH";
+        public const string RouteInfoTableName = "RouteInfo";
+        public const string RouteInfoStopNameColumn = "StopName";
     }
 }

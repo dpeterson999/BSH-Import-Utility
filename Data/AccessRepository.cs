@@ -17,6 +17,7 @@ namespace BSH_Import_Utility.Data
         private readonly string _connectionString;
         private readonly Dictionary<string, (string TableName, string ColumnName)> _columnToTableMap;
         private Dictionary<string, List<string>>? _cachedTableColumns;
+        private List<string>? _cachedRouteInfoStopNames;
 
         public AccessRepository(string connectionString,
             Dictionary<string, (string TableName, string ColumnName)> columnToTableMap)
@@ -94,6 +95,13 @@ namespace BSH_Import_Utility.Data
 
                             string matchedTable = match.Value.TableName!;
                             string matchedColumn = match.Value.ColumnName!;
+
+                            if (matchedTable.Equals(ImportConstants.BshTableName, StringComparison.OrdinalIgnoreCase) &&
+                                matchedColumn.Equals(ImportConstants.StorehouseLabel, StringComparison.OrdinalIgnoreCase) &&
+                                columnValue is string storehouseValue)
+                            {
+                                columnValue = ResolveStorehouseValue(storehouseValue, connection, transaction, orderNumber);
+                            }
 
                             if (!columnsByTable.ContainsKey(matchedTable))
                             {
@@ -192,7 +200,7 @@ namespace BSH_Import_Utility.Data
             // Insert BSH table first (other tables have a FK dependency on it),
             // then insert all remaining tables. OrderBy ensures BSH sorts before
             // everything else without modifying the dictionaries.
-            foreach (var table in columnsByTable.Keys.OrderBy(t => t == "BSH" ? 0 : 1))
+            foreach (var table in columnsByTable.Keys.OrderBy(t => t == ImportConstants.BshTableName ? 0 : 1))
             {
                 ExecuteInsertQuery(
                     table,
@@ -245,6 +253,82 @@ namespace BSH_Import_Utility.Data
 
             // Mapped in JSON but column is missing from the live DB schema
             return null;
+        }
+
+        /// <summary>
+        /// The PDF's "Storehouse | Pickup location" field is a fixed-width box, so long values
+        /// sometimes get cut off in the source PDF itself and arrive here ending in "..." or "…".
+        /// The BSH table enforces referential integrity against RouteInfo.StopName, so an exact
+        /// truncated value will fail with "a related record is required in table 'RouteInfo'".
+        /// If the value looks truncated, try to resolve it to the one RouteInfo.StopName it's a
+        /// prefix of, so the order can still be imported instead of being rejected outright.
+        /// </summary>
+        private object ResolveStorehouseValue(
+            string rawValue,
+            OleDbConnection connection,
+            OleDbTransaction transaction,
+            string orderNumber)
+        {
+            if (string.IsNullOrWhiteSpace(rawValue))
+                return rawValue;
+
+            string valueTrimmedRight = rawValue.TrimEnd();
+            bool looksTruncated =
+                valueTrimmedRight.EndsWith("...", StringComparison.Ordinal) ||
+                valueTrimmedRight.EndsWith("…", StringComparison.Ordinal);
+
+            if (!looksTruncated)
+                return rawValue;
+
+            string stem = valueTrimmedRight.TrimEnd('.', '…', ' ');
+
+            if (string.IsNullOrWhiteSpace(stem))
+                return rawValue; // nothing left to match on; insert as-is and let it fail as before
+
+            var stopNames = _cachedRouteInfoStopNames ??= LoadRouteInfoStopNames(connection, transaction);
+
+            var candidates = stopNames
+                .Where(s => s.StartsWith(stem, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (candidates.Count == 1)
+            {
+                ImportLogger.Log(
+                    $"Order {orderNumber} — resolved truncated storehouse value \"{rawValue}\" to \"{candidates[0]}\" via RouteInfo match.");
+                return candidates[0];
+            }
+
+            if (candidates.Count == 0)
+            {
+                ImportLogger.Log(
+                    $"Order {orderNumber} — storehouse value \"{rawValue}\" looks truncated but no RouteInfo.{ImportConstants.RouteInfoStopNameColumn} starts with \"{stem}\". Inserting as-is.");
+            }
+            else
+            {
+                ImportLogger.Log(
+                    $"Order {orderNumber} — storehouse value \"{rawValue}\" looks truncated but matched {candidates.Count} RouteInfo.{ImportConstants.RouteInfoStopNameColumn} values ({string.Join(" | ", candidates)}); ambiguous, inserting as-is.");
+            }
+
+            return rawValue;
+        }
+
+        private List<string> LoadRouteInfoStopNames(OleDbConnection connection, OleDbTransaction transaction)
+        {
+            var names = new List<string>();
+
+            using var command = new OleDbCommand(
+                $"SELECT [{ImportConstants.RouteInfoStopNameColumn}] FROM [{ImportConstants.RouteInfoTableName}]",
+                connection,
+                transaction);
+
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                if (!reader.IsDBNull(0))
+                    names.Add(reader.GetString(0));
+            }
+
+            return names;
         }
 
         private bool DoesOrderNumberExist(string orderNumber, OleDbConnection connection, OleDbTransaction transaction)
