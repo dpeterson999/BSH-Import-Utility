@@ -7,8 +7,8 @@ using System.Linq;
 namespace BSH_Import_Utility.Domain
 {
     /// <summary>
-    /// What importing a mapping JSON file would do. Import only adds and updates; it never
-    /// deactivates or deletes rows that are missing from the file.
+    /// What importing a mapping JSON file would do. Import adds and updates rows, including
+    /// their active state; it never deactivates or deletes rows that are missing from the file.
     /// </summary>
     public sealed class MappingImportPlan
     {
@@ -24,8 +24,11 @@ namespace BSH_Import_Utility.Domain
     {
         /// <summary>
         /// Compares file entries with the current rows. Entries under the
-        /// <see cref="ImportConstants.IgnoredJsonKey"/> table are ignored labels. Invalid targets,
-        /// repeated labels and attempts to change required fields are reported and skipped.
+        /// <see cref="ImportConstants.IgnoredJsonKey"/> table are ignored labels, and entries with
+        /// IsActive = false make the row inactive. Entries with notes (not null) also set the
+        /// row's notes. Invalid targets, repeated labels and attempts
+        /// to change required fields are reported and skipped. An inactive mapping may point at a
+        /// column the database no longer has, since that is a common reason to deactivate one.
         /// </summary>
         public static MappingImportPlan Plan(
             IEnumerable<ColumnMapEntry> entries,
@@ -51,7 +54,10 @@ namespace BSH_Import_Utility.Domain
                 bool ignore = entry.TableName.Equals(ImportConstants.IgnoredJsonKey, StringComparison.OrdinalIgnoreCase);
                 existing.TryGetValue(label, out var row);
 
-                bool same = row != null && row.IsActive && row.IsIgnored == ignore &&
+                bool sameNotes = row != null &&
+                                 (entry.Notes == null || MappingRules.NormalizeNotes(entry.Notes) == MappingRules.NormalizeNotes(row.Notes));
+
+                bool same = row != null && sameNotes && row.IsActive == entry.IsActive && row.IsIgnored == ignore &&
                             (ignore ||
                              (string.Equals(row.TableName, entry.TableName, StringComparison.OrdinalIgnoreCase) &&
                               string.Equals(row.ColumnName, entry.ColumnName, StringComparison.OrdinalIgnoreCase)));
@@ -68,7 +74,16 @@ namespace BSH_Import_Utility.Domain
                     continue;
                 }
 
-                if (!ignore)
+                if (!ignore && !entry.IsActive)
+                {
+                    if (string.IsNullOrWhiteSpace(entry.TableName) || string.IsNullOrWhiteSpace(entry.ColumnName) ||
+                        !MappingRules.IsSafeName(entry.TableName) || !MappingRules.IsSafeName(entry.ColumnName))
+                    {
+                        plan.Problems.Add($"\"{label}\" was skipped: its table or column name is missing or invalid.");
+                        continue;
+                    }
+                }
+                else if (!ignore)
                 {
                     string? error = MappingRules.Validate(label, entry.TableName, entry.ColumnName, selectableTargets);
                     if (error != null)
@@ -79,8 +94,8 @@ namespace BSH_Import_Utility.Domain
                 }
 
                 var choice = ignore
-                    ? new MappingChoice(label, null, null, Ignore: true)
-                    : new MappingChoice(label, entry.TableName, entry.ColumnName, Ignore: false);
+                    ? new MappingChoice(label, null, null, Ignore: true, entry.Notes, entry.IsActive)
+                    : new MappingChoice(label, entry.TableName, entry.ColumnName, Ignore: false, entry.Notes, entry.IsActive);
 
                 (row == null ? plan.Adds : plan.Changes).Add(choice);
             }

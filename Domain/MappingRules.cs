@@ -39,6 +39,15 @@ namespace BSH_Import_Utility.Domain
         };
 
         /// <summary>
+        /// Notes as the ColumnMap table keeps them: trimmed, at most 255 characters, "" for none.
+        /// </summary>
+        public static string NormalizeNotes(string? notes)
+        {
+            string trimmed = notes?.Trim() ?? "";
+            return trimmed.Length > 255 ? trimmed.Substring(0, 255) : trimmed;
+        }
+
+        /// <summary>
         /// Table/column names end up inside [brackets] in INSERT statements, so they must not contain brackets.
         /// </summary>
         public static bool IsSafeName(string? name) =>

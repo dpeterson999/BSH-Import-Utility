@@ -27,5 +27,16 @@ namespace BSH_Import_Utility.Domain
         /// Section of an exported mapping JSON file that lists ignored labels (label → "").
         /// </summary>
         public const string IgnoredJsonKey = "_ignored";
+
+        /// <summary>
+        /// Section of an exported mapping JSON file that holds inactive rows, laid out like the
+        /// rest of the file (table → label → column, plus its own <see cref="IgnoredJsonKey"/>).
+        /// </summary>
+        public const string InactiveJsonKey = "_inactive";
+
+        /// <summary>
+        /// Section of an exported mapping JSON file that holds row notes (label → note).
+        /// </summary>
+        public const string NotesJsonKey = "_notes";
     }
 }

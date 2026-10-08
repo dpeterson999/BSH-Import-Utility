@@ -206,8 +206,8 @@ namespace BSH_Import_Utility.Data
 
                     using var command = new OleDbCommand(
                         $"INSERT INTO [{ImportConstants.ColumnMapTableName}] " +
-                        "([PdfLabel], [TableName], [ColumnName], [IsActive], [IsIgnored], [CreatedOn], [ChangedOn]) " +
-                        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        "([PdfLabel], [TableName], [ColumnName], [IsActive], [IsIgnored], [CreatedOn], [ChangedOn], [Notes]) " +
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                         connection,
                         transaction);
 
@@ -217,10 +217,11 @@ namespace BSH_Import_Utility.Data
                     command.Parameters.Add("?", OleDbType.VarWChar).Value = label;
                     command.Parameters.Add("?", OleDbType.VarWChar).Value = ignore ? DBNull.Value : entry.TableName;
                     command.Parameters.Add("?", OleDbType.VarWChar).Value = ignore ? DBNull.Value : entry.ColumnName;
-                    command.Parameters.Add("?", OleDbType.Boolean).Value = true;
+                    command.Parameters.Add("?", OleDbType.Boolean).Value = entry.IsActive;
                     command.Parameters.Add("?", OleDbType.Boolean).Value = ignore;
                     command.Parameters.Add("?", OleDbType.Date).Value = now;
                     command.Parameters.Add("?", OleDbType.Date).Value = now;
+                    command.Parameters.Add("?", OleDbType.VarWChar).Value = NotesValue(entry.Notes);
 
                     command.ExecuteNonQuery();
                     inserted++;
@@ -239,9 +240,10 @@ namespace BSH_Import_Utility.Data
 
         /// <summary>
         /// Saves the user's choices in one transaction. An existing row for the label (active or
-        /// not) is updated and reactivated; otherwise a new row is added. Ignored labels are
-        /// stored with no table or column. Callers validate targets against the live schema
-        /// first; bracket checks are repeated here because these names reach INSERT statements.
+        /// not) is updated and given the choice's active state, which is active unless a mapping
+        /// file said otherwise; otherwise a new row is added. Ignored labels are stored with no
+        /// table or column. Callers validate targets against the live schema first; bracket
+        /// checks are repeated here because these names reach INSERT statements.
         /// </summary>
         public void SaveChoices(IEnumerable<MappingChoice> choices)
         {
@@ -265,10 +267,7 @@ namespace BSH_Import_Utility.Data
                     if (!choice.Ignore && (!MappingRules.IsSafeName(choice.TableName) || !MappingRules.IsSafeName(choice.ColumnName)))
                         throw new ArgumentException($"Invalid table or column for \"{label}\".");
 
-                    // Blank notes are stored as NULL, which also clears notes on update.
-                    object notes = string.IsNullOrWhiteSpace(choice.Notes)
-                        ? DBNull.Value
-                        : choice.Notes!.Trim().Length > 255 ? choice.Notes.Trim().Substring(0, 255) : choice.Notes.Trim();
+                    object notes = NotesValue(choice.Notes);
 
                     int updated;
                     using (var update = new OleDbCommand(
@@ -281,7 +280,7 @@ namespace BSH_Import_Utility.Data
                     {
                         update.Parameters.Add("?", OleDbType.VarWChar).Value = table;
                         update.Parameters.Add("?", OleDbType.VarWChar).Value = column;
-                        update.Parameters.Add("?", OleDbType.Boolean).Value = true;
+                        update.Parameters.Add("?", OleDbType.Boolean).Value = choice.IsActive;
                         update.Parameters.Add("?", OleDbType.Boolean).Value = choice.Ignore;
                         update.Parameters.Add("?", OleDbType.Date).Value = now;
                         if (choice.Notes != null)
@@ -303,7 +302,7 @@ namespace BSH_Import_Utility.Data
                     insert.Parameters.Add("?", OleDbType.VarWChar).Value = label;
                     insert.Parameters.Add("?", OleDbType.VarWChar).Value = table;
                     insert.Parameters.Add("?", OleDbType.VarWChar).Value = column;
-                    insert.Parameters.Add("?", OleDbType.Boolean).Value = true;
+                    insert.Parameters.Add("?", OleDbType.Boolean).Value = choice.IsActive;
                     insert.Parameters.Add("?", OleDbType.Boolean).Value = choice.Ignore;
                     insert.Parameters.Add("?", OleDbType.Date).Value = now;
                     insert.Parameters.Add("?", OleDbType.Date).Value = now;
@@ -319,6 +318,13 @@ namespace BSH_Import_Utility.Data
                 throw;
             }
         }
+
+        /// <summary>
+        /// Notes as stored: trimmed and cut to the 255-character column, with blank stored as NULL
+        /// (which also clears notes on update).
+        /// </summary>
+        private static object NotesValue(string? notes) =>
+            string.IsNullOrWhiteSpace(notes) ? DBNull.Value : MappingRules.NormalizeNotes(notes);
     }
 
     public record SeedResult(int Inserted, List<ColumnMapEntry> Duplicates);

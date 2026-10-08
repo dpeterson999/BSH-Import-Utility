@@ -77,5 +77,50 @@ namespace BSH_Import_Utility.Tests
             Assert.False(plan.HasWork);
             Assert.Equal(1, plan.Unchanged);
         }
+
+        [Fact]
+        public void Plan_HonorsActiveStateFromFile()
+        {
+            var entries = new List<ColumnMapEntry>
+            {
+                new("Chili 14.4 oz", "CannedMeats", "Chili", IsActive: false),   // change: deactivates
+                new("Tuna 5 oz", "CannedMeats", "Tuna", IsActive: false),        // unchanged (already inactive)
+                new("Stray text", ImportConstants.IgnoredJsonKey, "", IsActive: false), // change: deactivates ignore
+                new("Old item", "CannedMeats", "Gone column", IsActive: false),   // add: inactive may point at a missing column
+                new("Ward", "BSH", "Ward", IsActive: false),                      // problem: required field
+            };
+
+            var plan = MappingImportPlanner.Plan(entries, Existing(), Targets());
+
+            Assert.Equal(new[] { "Old item" }, plan.Adds.Select(a => a.PdfLabel));
+            Assert.Equal(new[] { "Chili 14.4 oz", "Stray text" }, plan.Changes.Select(c => c.PdfLabel));
+            Assert.All(plan.Adds.Concat(plan.Changes), c => Assert.False(c.IsActive));
+            Assert.True(plan.Changes.Single(c => c.PdfLabel == "Stray text").Ignore);
+            Assert.Equal(1, plan.Unchanged);
+            Assert.Single(plan.Problems);
+        }
+
+        [Fact]
+        public void Plan_SetsNotesOnlyWhenFileHasThem()
+        {
+            var existing = Existing();
+            existing[1] = existing[1] with { Notes = "keep me" };
+
+            var withoutNotes = MappingImportPlanner.Plan(
+                new List<ColumnMapEntry> { new("Chili 14.4 oz", "CannedMeats", "Chili") }, existing, Targets());
+            Assert.False(withoutNotes.HasWork);
+
+            var sameNotes = MappingImportPlanner.Plan(
+                new List<ColumnMapEntry> { new("Chili 14.4 oz", "CannedMeats", "Chili", Notes: " keep me ") }, existing, Targets());
+            Assert.False(sameNotes.HasWork);
+
+            var cleared = MappingImportPlanner.Plan(
+                new List<ColumnMapEntry> { new("Chili 14.4 oz", "CannedMeats", "Chili", Notes: "") }, existing, Targets());
+            Assert.Equal("", Assert.Single(cleared.Changes).Notes);
+
+            var changed = MappingImportPlanner.Plan(
+                new List<ColumnMapEntry> { new("Chili 14.4 oz", "CannedMeats", "Chili", Notes: "new note") }, existing, Targets());
+            Assert.Equal("new note", Assert.Single(changed.Changes).Notes);
+        }
     }
 }

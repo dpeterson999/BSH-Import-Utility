@@ -335,9 +335,10 @@ namespace BSH_Import_Utility
             try
             {
                 ColumnMapLoader.Save(dlg.FileName, _rows);
-                int count = _rows.Count(r => r.IsActive);
-                ImportLogger.Log($"Exported {count} active mapping(s) to {dlg.FileName}");
-                MessageBox.Show(this, $"Exported {count} active mapping(s) to:\n\n{dlg.FileName}",
+                int inactive = _rows.Count(r => !r.IsActive);
+                string counts = $"{_rows.Count} mapping(s) ({inactive} inactive)";
+                ImportLogger.Log($"Exported {counts} to {dlg.FileName}");
+                MessageBox.Show(this, $"Exported {counts} to:\n\n{dlg.FileName}",
                     "Export Complete", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
@@ -415,13 +416,16 @@ namespace BSH_Import_Utility
         }
 
         private string Describe(MappingChoice c) =>
-            c.Ignore ? $"  {c.PdfLabel} → (ignored)" : $"  {c.PdfLabel} → {c.TableName} / {c.ColumnName}";
+            (c.Ignore ? $"  {c.PdfLabel} → (ignored)" : $"  {c.PdfLabel} → {c.TableName} / {c.ColumnName}") +
+            (c.IsActive ? "" : " (inactive)");
 
         private string DescribeChange(MappingChoice c)
         {
             var row = _rows.First(r => r.PdfLabel.Trim().Equals(c.PdfLabel, StringComparison.OrdinalIgnoreCase));
-            string before = !row.IsActive ? "(inactive)" : row.IsIgnored ? "(ignored)" : $"{row.TableName} / {row.ColumnName}";
-            return $"{Describe(c)}   (was {before})";
+            string before = (row.IsIgnored ? "(ignored)" : $"{row.TableName} / {row.ColumnName}") +
+                            (row.IsActive ? "" : " (inactive)");
+            bool notesChanged = c.Notes != null && MappingRules.NormalizeNotes(c.Notes) != MappingRules.NormalizeNotes(row.Notes);
+            return $"{Describe(c)}   (was {before})" + (notesChanged ? "   [note changed]" : "");
         }
 
         private string BackupMappings()
