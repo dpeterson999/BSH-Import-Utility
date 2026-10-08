@@ -347,7 +347,15 @@ namespace BSH_Import_Utility.Data
             return names;
         }
 
-        private bool DoesOrderNumberExist(string orderNumber, OleDbConnection connection, OleDbTransaction transaction)
+        /// <summary>True when the BSH table already has this order, so an import would skip it.</summary>
+        public bool OrderExists(string orderNumber)
+        {
+            using var connection = new OleDbConnection(_connectionString);
+            connection.Open();
+            return DoesOrderNumberExist(orderNumber, connection, null);
+        }
+
+        private bool DoesOrderNumberExist(string orderNumber, OleDbConnection connection, OleDbTransaction? transaction)
         {
             string query = "SELECT COUNT(*) FROM BSH WHERE [Order Number] = ?";
             using (var command = new OleDbCommand(query, connection, transaction))

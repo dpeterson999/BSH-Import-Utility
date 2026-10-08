@@ -209,6 +209,7 @@
     <Compile Include="Domain\ImportConstants.cs" />
     <Compile Include="Domain\MappingImportPlanner.cs" />
     <Compile Include="Domain\MappingRules.cs" />
+    <Compile Include="Domain\PdfLabelChecker.cs" />
     <Compile Include="Domain\ProcessedLine.cs" />
     <Compile Include="Domain\UnresolvedLabel.cs" />
     <Compile Include="Form1.cs">
@@ -225,6 +226,9 @@
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="MappingManagerForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="PdfTestForm.cs">
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="ResolveMappingsForm.cs">

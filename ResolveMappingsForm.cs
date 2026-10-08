@@ -36,7 +36,8 @@ namespace BSH_Import_Utility
             string fileName,
             IReadOnlyList<UnresolvedLabel> items,
             SortedDictionary<string, List<string>> selectableTargets,
-            IReadOnlyDictionary<string, (string TableName, string ColumnName)> existingMap)
+            IReadOnlyDictionary<string, (string TableName, string ColumnName)> existingMap,
+            string? introText = null)
         {
             _targets = selectableTargets;
             _existingMap = existingMap;
@@ -55,8 +56,9 @@ namespace BSH_Import_Utility
                 Height = 78,
                 Padding = new Padding(12, 10, 12, 0),
                 Text =
-                    $"Order {orderNumber} ({fileName}) has {items.Count} item(s) that can't be saved yet. " +
-                    "Nothing from this order has been saved.\n\n" +
+                    (introText ??
+                     $"Order {orderNumber} ({fileName}) has {items.Count} item(s) that can't be saved yet. " +
+                     "Nothing from this order has been saved.") + "\n\n" +
                     "For each item, choose the table and column it belongs in, or tick Ignore if it is not an order item " +
                     "(for example, stray text from the PDF). Your choices are remembered for future imports."
             };

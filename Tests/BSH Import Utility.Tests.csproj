@@ -20,6 +20,8 @@
     <Compile Include="..\Domain\ImportConstants.cs" Link="Linked\ImportConstants.cs" />
     <Compile Include="..\Domain\MappingImportPlanner.cs" Link="Linked\MappingImportPlanner.cs" />
     <Compile Include="..\Domain\MappingRules.cs" Link="Linked\MappingRules.cs" />
+    <Compile Include="..\Domain\PdfLabelChecker.cs" Link="Linked\PdfLabelChecker.cs" />
+    <Compile Include="..\Domain\ProcessedLine.cs" Link="Linked\ProcessedLine.cs" />
     <Compile Include="..\Domain\UnresolvedLabel.cs" Link="Linked\UnresolvedLabel.cs" />
     <Compile Include="..\Infrastructure\IsExternalInit.cs" Link="Linked\IsExternalInit.cs" />
     <None Include="..\ColumnToTableMap.json" Link="ColumnToTableMap.json" CopyToOutputDirectory="PreserveNewest" />

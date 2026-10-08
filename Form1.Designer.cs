@@ -29,6 +29,7 @@ namespace BSH_Import_Utility
             this.accessDatabaseLocationToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.ignoredColumnsToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.columnMappingsToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.testPdfToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.viewImportLogToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.exitToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.panel1 = new System.Windows.Forms.Panel();
@@ -81,6 +82,7 @@ namespace BSH_Import_Utility
             this.menuToolStripMenuItem.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
             this.accessDatabaseLocationToolStripMenuItem,
             this.columnMappingsToolStripMenuItem,
+            this.testPdfToolStripMenuItem,
             this.ignoredColumnsToolStripMenuItem,
             this.viewImportLogToolStripMenuItem,
             this.exitToolStripMenuItem});
@@ -108,6 +110,13 @@ namespace BSH_Import_Utility
             this.columnMappingsToolStripMenuItem.Size = new System.Drawing.Size(210, 22);
             this.columnMappingsToolStripMenuItem.Text = "Column Mappings…";
             this.columnMappingsToolStripMenuItem.Click += new System.EventHandler(this.columnMappingsToolStripMenuItem_Click);
+            //
+            // testPdfToolStripMenuItem
+            //
+            this.testPdfToolStripMenuItem.Name = "testPdfToolStripMenuItem";
+            this.testPdfToolStripMenuItem.Size = new System.Drawing.Size(210, 22);
+            this.testPdfToolStripMenuItem.Text = "Test a PDF…";
+            this.testPdfToolStripMenuItem.Click += new System.EventHandler(this.testPdfToolStripMenuItem_Click);
             // 
             // viewImportLogStripMenuItem
             // 
@@ -178,6 +187,7 @@ namespace BSH_Import_Utility
         private ToolStripMenuItem accessDatabaseLocationToolStripMenuItem;
         private ToolStripMenuItem ignoredColumnsToolStripMenuItem;
         private ToolStripMenuItem columnMappingsToolStripMenuItem;
+        private ToolStripMenuItem testPdfToolStripMenuItem;
         private ToolStripMenuItem viewImportLogToolStripMenuItem;
         private Panel panel1;
         private Panel panel2;

@@ -79,6 +79,17 @@ namespace BSH_Import_Utility
             if (outcome.UnresolvedLabels.Count == 0)
                 return false;
 
+            string orderNumber = string.IsNullOrWhiteSpace(outcome.OrderNumber) ? "(Unknown)" : outcome.OrderNumber!;
+            return ResolveLabels(outcome.UnresolvedLabels, orderNumber, Path.GetFileName(displayFile), introText: null);
+        }
+
+        /// <summary>
+        /// Shows the Unrecognized Items dialog for these labels and saves the choices. Returns true
+        /// when choices were saved (mappings are reloaded). introText replaces the dialog's
+        /// opening sentence; null uses the import wording.
+        /// </summary>
+        private bool ResolveLabels(IReadOnlyList<UnresolvedLabel> items, string orderNumber, string fileName, string? introText)
+        {
             Dictionary<string, List<string>> schema;
             try
             {
@@ -92,14 +103,13 @@ namespace BSH_Import_Utility
                 return false;
             }
 
-            string orderNumber = string.IsNullOrWhiteSpace(outcome.OrderNumber) ? "(Unknown)" : outcome.OrderNumber!;
-
             using var dlg = new ResolveMappingsForm(
                 orderNumber,
-                Path.GetFileName(displayFile),
-                outcome.UnresolvedLabels,
+                fileName,
+                items,
                 MappingRules.GetSelectableTargets(schema),
-                columnToTableMap);
+                columnToTableMap,
+                introText);
 
             if (dlg.ShowDialog(this) != DialogResult.OK)
                 return false;
@@ -236,6 +246,50 @@ namespace BSH_Import_Utility
             ImportPdfFiles(dlg.FileNames);
         }
 
+        /// <summary>
+        /// Returns the PDFs to process: order forms as they are, and each picklist split into one
+        /// temporary PDF per order. Temporary files are added to tempFiles (the caller purges them)
+        /// and mapped back to their picklist in sourceFileMap.
+        /// </summary>
+        private List<string> ExpandPicklists(
+            IEnumerable<string> files,
+            List<string> tempFiles,
+            Dictionary<string, string> sourceFileMap)
+        {
+            var allFiles = new List<string>();
+
+            foreach (var file in files)
+            {
+                if (PdfSplitService.IsPicklist(file))
+                {
+                    int startPage = PdfSplitService.FindFirstOrderPage(file);
+
+                    if (startPage < 1)
+                    {
+                        MessageBox.Show(
+                            $"No individual orders found in:\n{file}",
+                            "No Orders Found",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Warning);
+                        continue;
+                    }
+
+                    var split = PdfSplitService.FlattenAndSplitTwoPages(file, startPage);
+                    allFiles.AddRange(split);
+                    tempFiles.AddRange(split);
+
+                    foreach (var s in split)
+                        sourceFileMap[s] = file;
+                }
+                else
+                {
+                    allFiles.Add(file);
+                }
+            }
+
+            return allFiles;
+        }
+
         private void ImportPdfFiles(IEnumerable<string>? files)
         {
             var fileList = files?.ToList() ?? new List<string>();
@@ -249,34 +303,7 @@ namespace BSH_Import_Utility
 
             try
             {
-                foreach (var file in fileList)
-                {
-                    if (PdfSplitService.IsPicklist(file))
-                    {
-                        int startPage = PdfSplitService.FindFirstOrderPage(file);
-
-                        if (startPage < 1)
-                        {
-                            MessageBox.Show(
-                                $"No individual orders found in:\n{file}",
-                                "No Orders Found",
-                                MessageBoxButtons.OK,
-                                MessageBoxIcon.Warning);
-                            continue;
-                        }
-
-                        var split = PdfSplitService.FlattenAndSplitTwoPages(file, startPage);
-                        allFiles.AddRange(split);
-                        tempFiles.AddRange(split);
-
-                        foreach (var s in split)
-                            sourceFileMap[s] = file;
-                    }
-                    else
-                    {
-                        allFiles.Add(file);
-                    }
-                }
+                allFiles.AddRange(ExpandPicklists(fileList, tempFiles, sourceFileMap));
 
                 int totalFiles = allFiles.Count;
                 int successfulImports = 0;
@@ -448,6 +475,90 @@ namespace BSH_Import_Utility
                 if (dlg.MappingsChanged)
                     ReloadMappings();
             }
+        }
+
+        private void testPdfToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            using var open = new OpenFileDialog
+            {
+                Filter = "PDF Files|*.pdf",
+                Title = "Select Order Form(s) or Picklist(s) to Test",
+                Multiselect = true
+            };
+
+            if (open.ShowDialog(this) != DialogResult.OK) return;
+
+            var tempFiles = new List<string>();
+            var sourceFileMap = new Dictionary<string, string>();
+            var parsed = new List<(string DisplayFile, List<ProcessedLine> Lines)>();
+
+            try
+            {
+                Cursor = Cursors.WaitCursor;
+
+                foreach (var file in ExpandPicklists(open.FileNames, tempFiles, sourceFileMap))
+                {
+                    string displayFile = Path.GetFileName(sourceFileMap.TryGetValue(file, out var source) ? source : file);
+
+                    try
+                    {
+                        parsed.Add((displayFile, _pdfService.ParsePdfFile(file)));
+                    }
+                    catch (Exception ex)
+                    {
+                        Cursor = Cursors.Default;
+                        MessageBox.Show(this, $"{displayFile}\n\n{ex.Message}", "PDF Parse Error",
+                            MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, $"The PDF could not be read.\n\n{ex.Message}", "Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+            finally
+            {
+                Cursor = Cursors.Default;
+                PdfSplitService.PurgeGeneratedFiles(tempFiles);
+            }
+
+            if (parsed.Count == 0) return;
+
+            // Re-run against the current mappings each time, so the window can refresh
+            // after the user sets up unrecognized items.
+            List<OrderCheck> RunCheck()
+            {
+                var schema = _repo.GetSchema();
+                return parsed.Select(p =>
+                {
+                    string orderNumber = PdfLabelChecker.FindOrderNumber(p.Lines);
+                    bool exists = orderNumber.Length > 0 && _repo.OrderExists(orderNumber);
+                    var labels = PdfLabelChecker.Check(p.Lines, columnToTableMap, userIgnoredLabels, schema);
+                    return new OrderCheck(p.DisplayFile, orderNumber, exists, labels);
+                }).ToList();
+            }
+
+            bool SetUpItems(IReadOnlyList<UnresolvedLabel> items, string orderNumbers, string source) =>
+                ResolveLabels(items, orderNumbers, source,
+                    $"Testing {source} found {items.Count} item(s) that are not set up. Nothing has been imported.");
+
+            PdfTestForm dlg;
+            try
+            {
+                dlg = new PdfTestForm(RunCheck, SetUpItems);
+            }
+            catch (Exception ex)
+            {
+                ImportLogger.Log($"Testing PDF(s) failed: {ex.Message}");
+                MessageBox.Show(this, $"The PDF could not be checked.\n\n{ex.Message}",
+                    "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            using (dlg)
+                dlg.ShowDialog(this);
         }
 
         private void btnShowIgnoredColumns_Click(object sender, EventArgs e)
