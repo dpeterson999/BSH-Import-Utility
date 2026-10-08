@@ -21,5 +21,6 @@ namespace BSH_Import_Utility.Domain
         public const string RouteInfoTableName = "RouteInfo";
         public const string RouteInfoStopNameColumn = "StopName";
         public const string ColumnMapTableName = "ColumnMap";
+        public const string OrderNumberColumn = "Order Number";
     }
 }
