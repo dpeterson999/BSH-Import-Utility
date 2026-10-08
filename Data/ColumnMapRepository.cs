@@ -182,6 +182,80 @@ namespace BSH_Import_Utility.Data
 
             return new SeedResult(inserted, duplicates);
         }
+
+        /// <summary>
+        /// Saves the user's choices in one transaction. An existing row for the label (active or
+        /// not) is updated and reactivated; otherwise a new row is added. Ignored labels are
+        /// stored with no table or column. Callers validate targets against the live schema
+        /// first; bracket checks are repeated here because these names reach INSERT statements.
+        /// </summary>
+        public void SaveChoices(IEnumerable<MappingChoice> choices)
+        {
+            var now = DateTime.Now;
+
+            using var connection = new OleDbConnection(_connectionString);
+            connection.Open();
+
+            using var transaction = connection.BeginTransaction();
+            try
+            {
+                foreach (var choice in choices)
+                {
+                    string label = choice.PdfLabel.Trim();
+                    object table = choice.Ignore ? DBNull.Value : (object?)choice.TableName ?? DBNull.Value;
+                    object column = choice.Ignore ? DBNull.Value : (object?)choice.ColumnName ?? DBNull.Value;
+
+                    if (label.Length == 0)
+                        throw new ArgumentException("A mapping has an empty PDF label.");
+
+                    if (!choice.Ignore && (!MappingRules.IsSafeName(choice.TableName) || !MappingRules.IsSafeName(choice.ColumnName)))
+                        throw new ArgumentException($"Invalid table or column for \"{label}\".");
+
+                    int updated;
+                    using (var update = new OleDbCommand(
+                               $"UPDATE [{ImportConstants.ColumnMapTableName}] " +
+                               "SET [TableName] = ?, [ColumnName] = ?, [IsActive] = ?, [IsIgnored] = ?, [ChangedOn] = ? " +
+                               "WHERE [PdfLabel] = ?",
+                               connection,
+                               transaction))
+                    {
+                        update.Parameters.Add("?", OleDbType.VarWChar).Value = table;
+                        update.Parameters.Add("?", OleDbType.VarWChar).Value = column;
+                        update.Parameters.Add("?", OleDbType.Boolean).Value = true;
+                        update.Parameters.Add("?", OleDbType.Boolean).Value = choice.Ignore;
+                        update.Parameters.Add("?", OleDbType.Date).Value = now;
+                        update.Parameters.Add("?", OleDbType.VarWChar).Value = label;
+                        updated = update.ExecuteNonQuery();
+                    }
+
+                    if (updated > 0)
+                        continue;
+
+                    using var insert = new OleDbCommand(
+                        $"INSERT INTO [{ImportConstants.ColumnMapTableName}] " +
+                        "([PdfLabel], [TableName], [ColumnName], [IsActive], [IsIgnored], [CreatedOn], [ChangedOn]) " +
+                        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        connection,
+                        transaction);
+
+                    insert.Parameters.Add("?", OleDbType.VarWChar).Value = label;
+                    insert.Parameters.Add("?", OleDbType.VarWChar).Value = table;
+                    insert.Parameters.Add("?", OleDbType.VarWChar).Value = column;
+                    insert.Parameters.Add("?", OleDbType.Boolean).Value = true;
+                    insert.Parameters.Add("?", OleDbType.Boolean).Value = choice.Ignore;
+                    insert.Parameters.Add("?", OleDbType.Date).Value = now;
+                    insert.Parameters.Add("?", OleDbType.Date).Value = now;
+                    insert.ExecuteNonQuery();
+                }
+
+                transaction.Commit();
+            }
+            catch
+            {
+                transaction.Rollback();
+                throw;
+            }
+        }
     }
 
     public record SeedResult(int Inserted, List<ColumnMapEntry> Duplicates);

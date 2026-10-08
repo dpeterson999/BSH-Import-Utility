@@ -43,12 +43,20 @@ namespace BSH_Import_Utility.Data
             }
         }
 
+        /// <summary>
+        /// Live table → columns (no AutoNumber columns, no MSys tables), cached for the life of
+        /// this repository. Create a new repository after a schema change to refresh it.
+        /// </summary>
+        public Dictionary<string, List<string>> GetSchema() =>
+            _cachedTableColumns ??= GetTableColumns();
+
         public InsertOutcome InsertDataIntoDatabase(ProcessedLine[] processedLines, string fileName)
         {
             var tableColumns = _cachedTableColumns ??= GetTableColumns();
             var columnsByTable = new Dictionary<string, List<string>>();
             var valuesByTable = new Dictionary<string, List<object>>();
             var missingColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var unresolvedLabels = new List<UnresolvedLabel>();
 
             using (var connection = new OleDbConnection(_connectionString))
             {
@@ -84,14 +92,17 @@ namespace BSH_Import_Utility.Data
 
                             if (match == null)
                             {
-                                if (!_columnToTableMap.ContainsKey(columnName))
+                                string label = columnName.Trim();
+
+                                if (!_columnToTableMap.TryGetValue(label, out var mapped))
                                 {
-                                    missingColumns.Add(columnName);
+                                    if (missingColumns.Add(label))
+                                        unresolvedLabels.Add(new UnresolvedLabel(label, columnValue, null, null));
                                 }
                                 else
                                 {
-                                    var mapped = _columnToTableMap[columnName];
-                                    missingColumns.Add($"{columnName} → {mapped.TableName}.{mapped.ColumnName} (missing in DB)");
+                                    if (missingColumns.Add($"{label} → {mapped.TableName}.{mapped.ColumnName} (missing in DB)"))
+                                        unresolvedLabels.Add(new UnresolvedLabel(label, columnValue, mapped.TableName, mapped.ColumnName));
                                 }
 
                                 continue;
@@ -158,7 +169,8 @@ namespace BSH_Import_Utility.Data
                             {
                                 Status = InsertStatus.MissingColumnMappings,
                                 OrderNumber = orderNumber,
-                                MissingColumns = missingColumns.ToList()
+                                MissingColumns = missingColumns.ToList(),
+                                UnresolvedLabels = unresolvedLabels
                             };
                         }
 

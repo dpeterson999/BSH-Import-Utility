@@ -54,12 +54,77 @@ namespace BSH_Import_Utility
             //
             connectionString = $@"Provider=Microsoft.ACE.OLEDB.16.0;Data Source={dbPath};Persist Security Info=False;";
 
-            LoadColumnMap();
-
-            _repo = new AccessRepository(connectionString, columnToTableMap, userIgnoredLabels);
+            ReloadMappings();
 
             UpdateWindowTitle();
             LoadGrid();
+        }
+
+        /// <summary>
+        /// Reloads the mapping from the database and replaces the repository, which also drops
+        /// its cached schema and RouteInfo names.
+        /// </summary>
+        private void ReloadMappings()
+        {
+            LoadColumnMap();
+            _repo = new AccessRepository(connectionString, columnToTableMap, userIgnoredLabels);
+        }
+
+        /// <summary>
+        /// Lets the user map or ignore the labels that blocked an order. Returns true when
+        /// choices were saved and the order should be retried.
+        /// </summary>
+        private bool ResolveMappings(InsertOutcome outcome, string displayFile)
+        {
+            if (outcome.UnresolvedLabels.Count == 0)
+                return false;
+
+            Dictionary<string, List<string>> schema;
+            try
+            {
+                schema = _repo.GetSchema();
+            }
+            catch (Exception ex)
+            {
+                ImportLogger.Log($"Could not read the database schema to resolve mappings: {ex.Message}");
+                MessageBox.Show(this, $"The database tables could not be read.\n\n{ex.Message}",
+                    "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return false;
+            }
+
+            string orderNumber = string.IsNullOrWhiteSpace(outcome.OrderNumber) ? "(Unknown)" : outcome.OrderNumber!;
+
+            using var dlg = new ResolveMappingsForm(
+                orderNumber,
+                Path.GetFileName(displayFile),
+                outcome.UnresolvedLabels,
+                MappingRules.GetSelectableTargets(schema),
+                columnToTableMap);
+
+            if (dlg.ShowDialog(this) != DialogResult.OK)
+                return false;
+
+            try
+            {
+                new ColumnMapRepository(connectionString).SaveChoices(dlg.Choices);
+            }
+            catch (Exception ex)
+            {
+                ImportLogger.Log($"Saving mappings for Order {orderNumber} failed: {ex.Message}");
+                MessageBox.Show(this, $"Your choices could not be saved.\n\n{ex.Message}",
+                    "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return false;
+            }
+
+            foreach (var choice in dlg.Choices)
+            {
+                ImportLogger.Log(choice.Ignore
+                    ? $"Mapping saved (Order {orderNumber}): \"{choice.PdfLabel}\" → ignored"
+                    : $"Mapping saved (Order {orderNumber}): \"{choice.PdfLabel}\" → {choice.TableName}.{choice.ColumnName}");
+            }
+
+            ReloadMappings();
+            return true;
         }
 
         /// <summary>
@@ -177,6 +242,7 @@ namespace BSH_Import_Utility
             var allFiles = new List<string>();
             var tempFiles = new List<string>();
             var duplicates = new List<string>();
+            var skippedForMappings = new List<string>();
             var sourceFileMap = new Dictionary<string, string>(); // temp file → original source file
 
             ImportOrderForm.Enabled = false;
@@ -247,6 +313,14 @@ namespace BSH_Import_Utility
 
                     var outcome = _repo.InsertDataIntoDatabase(processedLines.ToArray(), displayFile);
 
+                    // Let the user fix unrecognized items, then retry the same order. Each attempt
+                    // runs in its own transaction, so a failed attempt leaves nothing behind.
+                    while (outcome.Status == InsertStatus.MissingColumnMappings &&
+                           ResolveMappings(outcome, displayFile))
+                    {
+                        outcome = _repo.InsertDataIntoDatabase(processedLines.ToArray(), displayFile);
+                    }
+
                     switch (outcome.Status)
                     {
                         case InsertStatus.DuplicateOrderNumber:
@@ -256,14 +330,8 @@ namespace BSH_Import_Utility
                         case InsertStatus.MissingColumnMappings:
                             string label = string.IsNullOrWhiteSpace(outcome.OrderNumber)
                                 ? "(Unknown)" : outcome.OrderNumber!;
-                            using (var dlg = new SelectableMessageForm(
-                                $"Missing Mapping — {label}",
-                                "Columns not mapped or missing in DB:"
-                                + Environment.NewLine + Environment.NewLine
-                                + string.Join(Environment.NewLine, outcome.MissingColumns)))
-                            {
-                                dlg.ShowDialog(this);
-                            }
+                            skippedForMappings.Add($"Order {label}: {string.Join("; ", outcome.MissingColumns)}");
+                            ImportLogger.Log($"Skipped Order {label} with unresolved items.");
                             break;
 
                         case InsertStatus.Error:
@@ -315,6 +383,16 @@ namespace BSH_Import_Utility
                         $"{duplicates.Count} order(s) already existed and were skipped:"
                         + Environment.NewLine + Environment.NewLine
                         + string.Join(Environment.NewLine, duplicates));
+                    dlg.ShowDialog(this);
+                }
+
+                if (skippedForMappings.Count > 0)
+                {
+                    using var dlg = new SelectableMessageForm(
+                        "Orders Skipped",
+                        $"{skippedForMappings.Count} order(s) were skipped because some items were not set up:"
+                        + Environment.NewLine + Environment.NewLine
+                        + string.Join(Environment.NewLine, skippedForMappings));
                     dlg.ShowDialog(this);
                 }
 

@@ -1,4 +1,5 @@
-﻿using System;
+﻿using BSH_Import_Utility.Domain;
+using System;
 using System.Collections.Generic;
 
 namespace BSH_Import_Utility.Data
@@ -17,6 +18,7 @@ namespace BSH_Import_Utility.Data
         public InsertStatus Status { get; init; }
         public string? OrderNumber { get; init; }
         public List<string> MissingColumns { get; init; } = new();
+        public List<UnresolvedLabel> UnresolvedLabels { get; init; } = new();
         public Exception? Exception { get; init; }
         public string? FileName { get; init; }
     }
