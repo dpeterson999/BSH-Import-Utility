@@ -19,9 +19,9 @@ namespace BSH_Import_Utility
     {
         // Initializations
         private string? dbPath = Properties.Settings.Default.DatabasePath;
-        private readonly string connectionString = null!;
+        private string connectionString = null!;
         private readonly Dictionary<string, (string TableName, string ColumnName)> columnToTableMap = null!;
-        private readonly AccessRepository _repo = null!;
+        private AccessRepository _repo = null!;
         private readonly PdfImportService _pdfService = null!;
 
         public Form1()
@@ -47,14 +47,24 @@ namespace BSH_Import_Utility
             if (string.IsNullOrEmpty(dbPath) || !File.Exists(dbPath))
                 dbPath = PromptForDatabasePath();
 
+            _pdfService = new PdfImportService();
+
+            ConnectToDatabase();
+        }
+
+        /// <summary>
+        /// (Re)builds everything that depends on the current dbPath. Called at startup and
+        /// whenever the user picks a different database, so imports always go to the
+        /// database shown in the title bar.
+        /// </summary>
+        private void ConnectToDatabase()
+        {
             //
             // Requires Microsoft Access Database Engine 2016 x64
             //
             connectionString = $@"Provider=Microsoft.ACE.OLEDB.16.0;Data Source={dbPath};Persist Security Info=False;";
 
-            // Wire services
             _repo = new AccessRepository(connectionString, columnToTableMap);
-            _pdfService = new PdfImportService();
 
             UpdateWindowTitle();
             LoadGrid();
@@ -281,7 +291,7 @@ namespace BSH_Import_Utility
                     dbPath = openFileDialog.FileName;
                     Properties.Settings.Default.DatabasePath = dbPath;
                     Properties.Settings.Default.Save();
-                    UpdateWindowTitle();
+                    ConnectToDatabase();
                     MessageBox.Show($"Database path saved: {dbPath}");
                 }
             }
