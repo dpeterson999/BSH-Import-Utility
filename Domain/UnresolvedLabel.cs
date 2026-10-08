@@ -13,6 +13,7 @@ namespace BSH_Import_Utility.Domain
 
     /// <summary>
     /// What the user chose for one label: map it to TableName/ColumnName, or ignore it.
+    /// Notes, when not null, replaces the row's notes; null leaves existing notes alone.
     /// </summary>
-    public record MappingChoice(string PdfLabel, string? TableName, string? ColumnName, bool Ignore);
+    public record MappingChoice(string PdfLabel, string? TableName, string? ColumnName, bool Ignore, string? Notes = null);
 }

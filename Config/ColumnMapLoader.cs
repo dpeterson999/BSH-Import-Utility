@@ -3,6 +3,7 @@ using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 
 namespace BSH_Import_Utility.Config
 {
@@ -41,6 +42,37 @@ namespace BSH_Import_Utility.Config
             }
 
             return entries;
+        }
+
+        /// <summary>
+        /// Writes active rows in the same shape as ColumnToTableMap.json (table → label → column),
+        /// BSH first, then tables and labels alphabetically. Ignored labels go under
+        /// <see cref="ImportConstants.IgnoredJsonKey"/>. Inactive rows are left out.
+        /// </summary>
+        public static void Save(string jsonFilePath, IEnumerable<ColumnMapRow> rows)
+        {
+            var active = rows.Where(r => r.IsActive).ToList();
+
+            var tables = active
+                .Where(r => !r.IsIgnored && r.TableName != null && r.ColumnName != null)
+                .GroupBy(r => r.TableName!, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(g => g.Key.Equals(ImportConstants.BshTableName, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+                .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase);
+
+            var output = new Dictionary<string, Dictionary<string, string>>();
+
+            foreach (var table in tables)
+            {
+                output[table.Key] = table
+                    .OrderBy(r => r.PdfLabel, StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(r => r.PdfLabel, r => r.ColumnName!);
+            }
+
+            var ignored = active.Where(r => r.IsIgnored).OrderBy(r => r.PdfLabel, StringComparer.OrdinalIgnoreCase).ToList();
+            if (ignored.Count > 0)
+                output[ImportConstants.IgnoredJsonKey] = ignored.ToDictionary(r => r.PdfLabel, _ => "");
+
+            File.WriteAllText(jsonFilePath, JsonConvert.SerializeObject(output, Formatting.Indented));
         }
     }
 }

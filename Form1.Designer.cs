@@ -28,6 +28,7 @@ namespace BSH_Import_Utility
             this.menuToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.accessDatabaseLocationToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.ignoredColumnsToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.columnMappingsToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.viewImportLogToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.exitToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.panel1 = new System.Windows.Forms.Panel();
@@ -79,6 +80,7 @@ namespace BSH_Import_Utility
             // 
             this.menuToolStripMenuItem.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
             this.accessDatabaseLocationToolStripMenuItem,
+            this.columnMappingsToolStripMenuItem,
             this.ignoredColumnsToolStripMenuItem,
             this.viewImportLogToolStripMenuItem,
             this.exitToolStripMenuItem});
@@ -99,6 +101,13 @@ namespace BSH_Import_Utility
             this.ignoredColumnsToolStripMenuItem.Size = new System.Drawing.Size(210, 22);
             this.ignoredColumnsToolStripMenuItem.Text = "Ignored Columns";
             this.ignoredColumnsToolStripMenuItem.Click += new System.EventHandler(this.btnShowIgnoredColumns_Click);
+            //
+            // columnMappingsToolStripMenuItem
+            //
+            this.columnMappingsToolStripMenuItem.Name = "columnMappingsToolStripMenuItem";
+            this.columnMappingsToolStripMenuItem.Size = new System.Drawing.Size(210, 22);
+            this.columnMappingsToolStripMenuItem.Text = "Column Mappings…";
+            this.columnMappingsToolStripMenuItem.Click += new System.EventHandler(this.columnMappingsToolStripMenuItem_Click);
             // 
             // viewImportLogStripMenuItem
             // 
@@ -168,6 +177,7 @@ namespace BSH_Import_Utility
         private ToolStripMenuItem menuToolStripMenuItem;
         private ToolStripMenuItem accessDatabaseLocationToolStripMenuItem;
         private ToolStripMenuItem ignoredColumnsToolStripMenuItem;
+        private ToolStripMenuItem columnMappingsToolStripMenuItem;
         private ToolStripMenuItem viewImportLogToolStripMenuItem;
         private Panel panel1;
         private Panel panel2;

@@ -205,7 +205,9 @@
     <Compile Include="Data\ColumnMapRepository.cs" />
     <Compile Include="Data\InsertOutcome.cs" />
     <Compile Include="Domain\ColumnMapEntry.cs" />
+    <Compile Include="Domain\ColumnMapRow.cs" />
     <Compile Include="Domain\ImportConstants.cs" />
+    <Compile Include="Domain\MappingImportPlanner.cs" />
     <Compile Include="Domain\MappingRules.cs" />
     <Compile Include="Domain\ProcessedLine.cs" />
     <Compile Include="Domain\UnresolvedLabel.cs" />
@@ -219,6 +221,12 @@
     <Compile Include="Infrastructure\IsExternalInit.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="MappingEditForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="MappingManagerForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="ResolveMappingsForm.cs">
       <SubType>Form</SubType>
     </Compile>

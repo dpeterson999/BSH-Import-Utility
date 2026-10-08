@@ -22,5 +22,10 @@ namespace BSH_Import_Utility.Domain
         public const string RouteInfoStopNameColumn = "StopName";
         public const string ColumnMapTableName = "ColumnMap";
         public const string OrderNumberColumn = "Order Number";
+
+        /// <summary>
+        /// Section of an exported mapping JSON file that lists ignored labels (label → "").
+        /// </summary>
+        public const string IgnoredJsonKey = "_ignored";
     }
 }

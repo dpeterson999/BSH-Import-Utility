@@ -426,6 +426,30 @@ namespace BSH_Import_Utility
             }
         }
 
+        private void columnMappingsToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            MappingManagerForm dlg;
+            try
+            {
+                dlg = new MappingManagerForm(connectionString, _repo.GetSchema());
+            }
+            catch (Exception ex)
+            {
+                ImportLogger.Log($"Could not open the mapping manager: {ex.Message}");
+                MessageBox.Show(this, $"The column mappings could not be opened.\n\n{ex.Message}",
+                    "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            using (dlg)
+            {
+                dlg.ShowDialog(this);
+
+                if (dlg.MappingsChanged)
+                    ReloadMappings();
+            }
+        }
+
         private void btnShowIgnoredColumns_Click(object sender, EventArgs e)
         {
             var ignored = ImportConstants.IgnoredColumns.Union(userIgnoredLabels, StringComparer.OrdinalIgnoreCase).ToList();

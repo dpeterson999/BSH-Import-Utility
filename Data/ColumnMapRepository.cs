@@ -124,6 +124,57 @@ namespace BSH_Import_Utility.Data
         }
 
         /// <summary>
+        /// Every row, active or not, for the Mapping Manager.
+        /// </summary>
+        public List<ColumnMapRow> LoadAll()
+        {
+            var rows = new List<ColumnMapRow>();
+
+            using var connection = new OleDbConnection(_connectionString);
+            connection.Open();
+
+            using var command = new OleDbCommand(
+                "SELECT [Id], [PdfLabel], [TableName], [ColumnName], [IsActive], [IsIgnored], [CreatedOn], [ChangedOn], [Notes] " +
+                $"FROM [{ImportConstants.ColumnMapTableName}]",
+                connection);
+
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                rows.Add(new ColumnMapRow(
+                    Convert.ToInt32(reader[0]),
+                    reader.GetString(1),
+                    reader.IsDBNull(2) ? null : reader.GetString(2),
+                    reader.IsDBNull(3) ? null : reader.GetString(3),
+                    reader.GetBoolean(4),
+                    reader.GetBoolean(5),
+                    reader.GetDateTime(6),
+                    reader.GetDateTime(7),
+                    reader.IsDBNull(8) ? null : reader.GetString(8)));
+            }
+
+            return rows;
+        }
+
+        /// <summary>
+        /// Deactivates or reactivates one row. A deactivated label is treated as unmapped on import.
+        /// </summary>
+        public void SetActive(int id, bool isActive)
+        {
+            using var connection = new OleDbConnection(_connectionString);
+            connection.Open();
+
+            using var command = new OleDbCommand(
+                $"UPDATE [{ImportConstants.ColumnMapTableName}] SET [IsActive] = ?, [ChangedOn] = ? WHERE [Id] = ?",
+                connection);
+
+            command.Parameters.Add("?", OleDbType.Boolean).Value = isActive;
+            command.Parameters.Add("?", OleDbType.Date).Value = DateTime.Now;
+            command.Parameters.Add("?", OleDbType.Integer).Value = id;
+            command.ExecuteNonQuery();
+        }
+
+        /// <summary>
         /// Inserts the given entries in one transaction. Labels are trimmed; a label that
         /// repeats (ignoring case) is skipped and returned instead of failing the whole seed.
         /// </summary>
@@ -160,11 +211,14 @@ namespace BSH_Import_Utility.Data
                         connection,
                         transaction);
 
+                    // An exported file lists ignored labels under a special section.
+                    bool ignore = entry.TableName.Equals(ImportConstants.IgnoredJsonKey, StringComparison.OrdinalIgnoreCase);
+
                     command.Parameters.Add("?", OleDbType.VarWChar).Value = label;
-                    command.Parameters.Add("?", OleDbType.VarWChar).Value = entry.TableName;
-                    command.Parameters.Add("?", OleDbType.VarWChar).Value = entry.ColumnName;
+                    command.Parameters.Add("?", OleDbType.VarWChar).Value = ignore ? DBNull.Value : entry.TableName;
+                    command.Parameters.Add("?", OleDbType.VarWChar).Value = ignore ? DBNull.Value : entry.ColumnName;
                     command.Parameters.Add("?", OleDbType.Boolean).Value = true;
-                    command.Parameters.Add("?", OleDbType.Boolean).Value = false;
+                    command.Parameters.Add("?", OleDbType.Boolean).Value = ignore;
                     command.Parameters.Add("?", OleDbType.Date).Value = now;
                     command.Parameters.Add("?", OleDbType.Date).Value = now;
 
@@ -211,11 +265,17 @@ namespace BSH_Import_Utility.Data
                     if (!choice.Ignore && (!MappingRules.IsSafeName(choice.TableName) || !MappingRules.IsSafeName(choice.ColumnName)))
                         throw new ArgumentException($"Invalid table or column for \"{label}\".");
 
+                    // Blank notes are stored as NULL, which also clears notes on update.
+                    object notes = string.IsNullOrWhiteSpace(choice.Notes)
+                        ? DBNull.Value
+                        : choice.Notes!.Trim().Length > 255 ? choice.Notes.Trim().Substring(0, 255) : choice.Notes.Trim();
+
                     int updated;
                     using (var update = new OleDbCommand(
                                $"UPDATE [{ImportConstants.ColumnMapTableName}] " +
-                               "SET [TableName] = ?, [ColumnName] = ?, [IsActive] = ?, [IsIgnored] = ?, [ChangedOn] = ? " +
-                               "WHERE [PdfLabel] = ?",
+                               "SET [TableName] = ?, [ColumnName] = ?, [IsActive] = ?, [IsIgnored] = ?, [ChangedOn] = ?" +
+                               (choice.Notes != null ? ", [Notes] = ?" : "") +
+                               " WHERE [PdfLabel] = ?",
                                connection,
                                transaction))
                     {
@@ -224,6 +284,8 @@ namespace BSH_Import_Utility.Data
                         update.Parameters.Add("?", OleDbType.Boolean).Value = true;
                         update.Parameters.Add("?", OleDbType.Boolean).Value = choice.Ignore;
                         update.Parameters.Add("?", OleDbType.Date).Value = now;
+                        if (choice.Notes != null)
+                            update.Parameters.Add("?", OleDbType.VarWChar).Value = notes;
                         update.Parameters.Add("?", OleDbType.VarWChar).Value = label;
                         updated = update.ExecuteNonQuery();
                     }
@@ -233,8 +295,8 @@ namespace BSH_Import_Utility.Data
 
                     using var insert = new OleDbCommand(
                         $"INSERT INTO [{ImportConstants.ColumnMapTableName}] " +
-                        "([PdfLabel], [TableName], [ColumnName], [IsActive], [IsIgnored], [CreatedOn], [ChangedOn]) " +
-                        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        "([PdfLabel], [TableName], [ColumnName], [IsActive], [IsIgnored], [CreatedOn], [ChangedOn], [Notes]) " +
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                         connection,
                         transaction);
 
@@ -245,6 +307,7 @@ namespace BSH_Import_Utility.Data
                     insert.Parameters.Add("?", OleDbType.Boolean).Value = choice.Ignore;
                     insert.Parameters.Add("?", OleDbType.Date).Value = now;
                     insert.Parameters.Add("?", OleDbType.Date).Value = now;
+                    insert.Parameters.Add("?", OleDbType.VarWChar).Value = notes;
                     insert.ExecuteNonQuery();
                 }
 
