@@ -16,14 +16,17 @@ namespace BSH_Import_Utility.Data
     {
         private readonly string _connectionString;
         private readonly Dictionary<string, (string TableName, string ColumnName)> _columnToTableMap;
+        private readonly ISet<string> _userIgnoredLabels;
         private Dictionary<string, List<string>>? _cachedTableColumns;
         private List<string>? _cachedRouteInfoStopNames;
 
         public AccessRepository(string connectionString,
-            Dictionary<string, (string TableName, string ColumnName)> columnToTableMap)
+            Dictionary<string, (string TableName, string ColumnName)> columnToTableMap,
+            ISet<string> userIgnoredLabels)
         {
             _connectionString = connectionString;
             _columnToTableMap = columnToTableMap;
+            _userIgnoredLabels = userIgnoredLabels;
         }
 
         public DataTable LoadBshGrid()
@@ -63,7 +66,8 @@ namespace BSH_Import_Utility.Data
                             object columnValue = line.ColumnValue;
 
                             if (string.IsNullOrWhiteSpace(columnName) ||
-                                ImportConstants.IgnoredColumns.Contains(columnName.Trim()))
+                                ImportConstants.IgnoredColumns.Contains(columnName.Trim()) ||
+                                _userIgnoredLabels.Contains(columnName.Trim()))
                             {
                                 // ImportLogger.Log($"Ignored column: {columnName}");
                                 continue;
@@ -251,7 +255,7 @@ namespace BSH_Import_Utility.Data
                 return (mapped.TableName, mapped.ColumnName);
             }
 
-            // Mapped in JSON but column is missing from the live DB schema
+            // Mapped in ColumnMap but column is missing from the live DB schema
             return null;
         }
 

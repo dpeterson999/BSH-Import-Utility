@@ -20,25 +20,15 @@ namespace BSH_Import_Utility
         // Initializations
         private string? dbPath = Properties.Settings.Default.DatabasePath;
         private string connectionString = null!;
-        private readonly Dictionary<string, (string TableName, string ColumnName)> columnToTableMap = null!;
+        private Dictionary<string, (string TableName, string ColumnName)> columnToTableMap =
+            new(StringComparer.OrdinalIgnoreCase);
+        private HashSet<string> userIgnoredLabels = new(StringComparer.OrdinalIgnoreCase);
         private AccessRepository _repo = null!;
         private readonly PdfImportService _pdfService = null!;
 
         public Form1()
         {
             InitializeComponent();
-
-            // Load mapping config file.  If this file does not load, tables cannot be populated with records
-            try
-            {
-                columnToTableMap = ColumnMapLoader.Load("columnToTableMap.json");
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(ex.Message, "Config Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                Application.Exit();
-                return;
-            }
 
             // Resolve DB path
             dbPath = Properties.Settings.Default.DatabasePath;
@@ -64,10 +54,71 @@ namespace BSH_Import_Utility
             //
             connectionString = $@"Provider=Microsoft.ACE.OLEDB.16.0;Data Source={dbPath};Persist Security Info=False;";
 
-            _repo = new AccessRepository(connectionString, columnToTableMap);
+            LoadColumnMap();
+
+            _repo = new AccessRepository(connectionString, columnToTableMap, userIgnoredLabels);
 
             UpdateWindowTitle();
             LoadGrid();
+        }
+
+        /// <summary>
+        /// Loads the PDF label → column mapping from the database's ColumnMap table, creating the
+        /// table and seeding it from ColumnToTableMap.json the first time a database is opened.
+        /// If anything fails the map is left empty, so every order reports missing mappings and
+        /// nothing is inserted.
+        /// </summary>
+        private void LoadColumnMap()
+        {
+            columnToTableMap = new(StringComparer.OrdinalIgnoreCase);
+            userIgnoredLabels = new(StringComparer.OrdinalIgnoreCase);
+
+            try
+            {
+                var mapRepo = new ColumnMapRepository(connectionString);
+                mapRepo.EnsureTable();
+
+                if (mapRepo.IsEmpty())
+                    SeedColumnMap(mapRepo);
+
+                columnToTableMap = mapRepo.LoadActiveMap();
+                userIgnoredLabels = mapRepo.LoadIgnoredLabels();
+            }
+            catch (Exception ex)
+            {
+                ImportLogger.Log($"Failed to load column mappings from {dbPath}: {ex.Message}");
+                MessageBox.Show(
+                    $"The column mappings could not be loaded from the database.\n\n{ex.Message}\n\n" +
+                    "Orders cannot be imported until this is fixed.",
+                    "Column Mapping Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void SeedColumnMap(ColumnMapRepository mapRepo)
+        {
+            string jsonPath = ColumnMapLoader.DefaultPath;
+
+            if (!File.Exists(jsonPath))
+            {
+                ImportLogger.Log($"ColumnMap table is empty and {jsonPath} was not found; nothing to seed.");
+                MessageBox.Show(
+                    "This database has no column mappings yet, and the starter mapping file was not found:\n\n" +
+                    jsonPath,
+                    "No Column Mappings", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            var result = mapRepo.Seed(ColumnMapLoader.LoadEntries(jsonPath));
+
+            ImportLogger.Log($"Seeded ColumnMap in {dbPath} with {result.Inserted} mapping(s) from {jsonPath}.");
+            foreach (var dup in result.Duplicates)
+                ImportLogger.Log($"Seed skipped duplicate label \"{dup.PdfLabel}\" → {dup.TableName}.{dup.ColumnName}");
+
+            string message = $"Column mappings were copied into this database ({result.Inserted} mapping(s)).";
+            if (result.Duplicates.Count > 0)
+                message += $"\n\n{result.Duplicates.Count} duplicate label(s) were skipped. See the import log for details.";
+
+            MessageBox.Show(message, "Column Mappings Set Up", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         private string PromptForDatabasePath()
@@ -299,7 +350,9 @@ namespace BSH_Import_Utility
 
         private void btnShowIgnoredColumns_Click(object sender, EventArgs e)
         {
-            if (ImportConstants.IgnoredColumns.Count == 0)
+            var ignored = ImportConstants.IgnoredColumns.Union(userIgnoredLabels, StringComparer.OrdinalIgnoreCase).ToList();
+
+            if (ignored.Count == 0)
             {
                 MessageBox.Show(
                     "No columns are currently ignored.",
@@ -312,7 +365,7 @@ namespace BSH_Import_Utility
 
             MessageBox.Show(
                 "The following columns are currently ignored:\n\n" +
-                string.Join("\n", ImportConstants.IgnoredColumns.OrderBy(c => c)),
+                string.Join("\n", ignored.OrderBy(c => c)),
                 "Ignored Columns",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information
