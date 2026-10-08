@@ -262,9 +262,10 @@ namespace BSH_Import_Utility
 
             var labels = new HashSet<string>(_rows.Select(r => r.PdfLabel.Trim()), StringComparer.OrdinalIgnoreCase);
 
+            // Editing keeps the row's active state; Reactivate is a separate, deliberate step.
             using var dlg = new MappingEditForm(row, _targets, ActiveMap(), labels);
             if (dlg.ShowDialog(this) == DialogResult.OK && dlg.Result != null)
-                Save(new[] { dlg.Result }, "updated");
+                Save(new[] { dlg.Result with { IsActive = row.IsActive } }, "updated");
         }
 
         private void ToggleSelected()

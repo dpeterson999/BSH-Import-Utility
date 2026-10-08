@@ -196,7 +196,12 @@ namespace BSH_Import_Utility
             {
                 string label = row.Item.PdfLabel;
 
-                if (row.Ignore.Checked && !MappingRules.IsStructuralLabel(label))
+                // Required BSH fields can't be changed here (the row is disabled), so leave them
+                // out rather than blocking the user's choices for every other item.
+                if (MappingRules.IsStructuralLabel(label))
+                    continue;
+
+                if (row.Ignore.Checked)
                 {
                     choices.Add(new MappingChoice(label, null, null, Ignore: true));
                     continue;
@@ -215,6 +220,16 @@ namespace BSH_Import_Utility
 
                 choices.Add(new MappingChoice(label, tableName, columnName, Ignore: false));
                 warnings.AddRange(MappingRules.GetCategoryWarnings(label, tableName!, columnName!, _existingMap, _targets));
+            }
+
+            if (choices.Count == 0)
+            {
+                MessageBox.Show(this,
+                    "Only required order fields are listed, and they can't be changed here. " +
+                    "Check the BSH table in Access.",
+                    "Nothing to Save", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                DialogResult = DialogResult.Cancel;
+                return;
             }
 
             if (warnings.Count > 0)
