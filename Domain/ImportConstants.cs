@@ -5,6 +5,10 @@ namespace BSH_Import_Utility.Domain
 {
     public static class ImportConstants
     {
+        /// <summary>
+        /// Household and contact fields on the form that are never stored. These are always
+        /// ignored, on top of any labels ignored in the ColumnMap table.
+        /// </summary>
         public static readonly HashSet<string> IgnoredColumns = new(StringComparer.OrdinalIgnoreCase)
         {
             "# in household",

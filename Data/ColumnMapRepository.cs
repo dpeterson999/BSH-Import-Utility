@@ -269,6 +269,8 @@ namespace BSH_Import_Utility.Data
 
                     object notes = NotesValue(choice.Notes);
 
+                    // Notes is only updated when the choice carries notes. Parameters are
+                    // positional, so they are added below in exactly the order of the SQL.
                     int updated;
                     using (var update = new OleDbCommand(
                                $"UPDATE [{ImportConstants.ColumnMapTableName}] " +

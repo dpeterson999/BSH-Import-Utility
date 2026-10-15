@@ -18,7 +18,7 @@ namespace BSH_Import_Utility
     public partial class Form1 : Form
     {
         // Initializations
-        private string? dbPath = Properties.Settings.Default.DatabasePath;
+        private string? dbPath;
         private string connectionString = null!;
         private Dictionary<string, (string TableName, string ColumnName)> columnToTableMap =
             new(StringComparer.OrdinalIgnoreCase);
@@ -299,6 +299,8 @@ namespace BSH_Import_Utility
             var skippedForMappings = new List<string>();
             var sourceFileMap = new Dictionary<string, string>(); // temp file → original source file
 
+            // Disabled for the whole run: Application.DoEvents below would otherwise let a second
+            // click start another import in the middle of this one.
             ImportOrderForm.Enabled = false;
 
             try
@@ -394,6 +396,7 @@ namespace BSH_Import_Utility
                             break;
                     }
 
+                    // The import runs on the UI thread; let the progress bar repaint between orders.
                     progressBarImport.Value++;
                     Application.DoEvents();
                 }
@@ -561,7 +564,7 @@ namespace BSH_Import_Utility
                 dlg.ShowDialog(this);
         }
 
-        private void btnShowIgnoredColumns_Click(object sender, EventArgs e)
+        private void ignoredColumnsToolStripMenuItem_Click(object sender, EventArgs e)
         {
             var ignored = ImportConstants.IgnoredColumns.Union(userIgnoredLabels, StringComparer.OrdinalIgnoreCase).ToList();
 

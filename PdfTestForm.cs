@@ -41,9 +41,6 @@ namespace BSH_Import_Utility
         private readonly DataGridView _grid;
         private readonly Button _setUp;
 
-        /// <summary>True when mappings were saved from this window, so the caller reloads them.</summary>
-        public bool MappingsChanged { get; private set; }
-
         /// <param name="runCheck">Checks every order against the current mappings and schema.</param>
         /// <param name="setUpItems">Shows the Unrecognized Items dialog for these labels (with their
         /// order numbers and where they came from); returns true when choices were saved.</param>
@@ -190,21 +187,19 @@ namespace BSH_Import_Utility
             bool showOrder = _orders.Count > 1;
 
             var table = new DataTable();
-            table.Columns.Add("#", typeof(int));
             table.Columns.Add("Order", typeof(string));
             table.Columns.Add("PDF label", typeof(string));
             table.Columns.Add("Value", typeof(string));
             table.Columns.Add("Result", typeof(string));
             table.Columns.Add("Saves to", typeof(string));
 
-            int shown = 0, total = 0, seq = 0;
+            int shown = 0, total = 0;
 
             foreach (var order in _orders)
             {
                 foreach (var label in order.Labels)
                 {
                     total++;
-                    seq++;
 
                     bool include = filter switch
                     {
@@ -220,12 +215,11 @@ namespace BSH_Import_Utility
                     shown++;
                     string savesTo = label.TableName != null ? $"{label.TableName} / {label.ColumnName}" : "";
                     string value = label.HasValue ? label.Value?.ToString() ?? "" : "";
-                    table.Rows.Add(seq, order.HasOrderNumber ? order.OrderNumber : order.FileName, label.PdfLabel, value, ResultOf(label), savesTo);
+                    table.Rows.Add(order.HasOrderNumber ? order.OrderNumber : order.FileName, label.PdfLabel, value, ResultOf(label), savesTo);
                 }
             }
 
             _grid.DataSource = table;
-            _grid.Columns["#"].Visible = false;
             _grid.Columns["Order"].Visible = showOrder;
             _grid.Columns["Order"].FillWeight = 10;
             _grid.Columns["PDF label"].FillWeight = 38;
@@ -270,8 +264,6 @@ namespace BSH_Import_Utility
 
             if (!_setUpItems(items, orderNumbers, source))
                 return;
-
-            MappingsChanged = true;
 
             try
             {

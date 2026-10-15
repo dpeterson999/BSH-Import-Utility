@@ -50,6 +50,12 @@ namespace BSH_Import_Utility.Data
         public Dictionary<string, List<string>> GetSchema() =>
             _cachedTableColumns ??= GetTableColumns();
 
+        /// <summary>
+        /// Saves one order. Skips ignored labels and zero values, groups the rest by table using
+        /// the mapping, then stops without saving if there is no order number, the order already
+        /// exists, or any label is unmapped or mapped to a missing column. Otherwise inserts one
+        /// row per table. Everything runs in one transaction, so a failed order leaves nothing behind.
+        /// </summary>
         public InsertOutcome InsertDataIntoDatabase(ProcessedLine[] processedLines, string fileName)
         {
             var tableColumns = _cachedTableColumns ??= GetTableColumns();
@@ -124,6 +130,8 @@ namespace BSH_Import_Utility.Data
                                 valuesByTable[matchedTable] = new List<object>();
                             }
 
+                            // When two labels on one PDF map to the same column, the first one
+                            // wins and the second is only logged.
                             if (!columnsByTable[matchedTable].Contains(matchedColumn, StringComparer.OrdinalIgnoreCase))
                             {
                                 columnsByTable[matchedTable].Add(matchedColumn);
@@ -228,6 +236,11 @@ namespace BSH_Import_Utility.Data
             }
         }
 
+        /// <summary>
+        /// Inserts one row. Adds "Order Number" to the given columns and values if it is not
+        /// already there. OLE DB parameters are positional (?), so values must stay in the same
+        /// order as columns.
+        /// </summary>
         private void ExecuteInsertQuery(
             string tableName,
             List<string> columns,
@@ -365,6 +378,11 @@ namespace BSH_Import_Utility.Data
             }
         }
 
+        /// <summary>
+        /// Reads the schema through ADOX because it reports which columns are AutoNumber, so they
+        /// can be left out. The ADOX COM reference is why the app builds with Visual Studio's
+        /// MSBuild rather than dotnet build.
+        /// </summary>
         private Dictionary<string, List<string>> GetTableColumns()
         {
             var tableColumns = new Dictionary<string, List<string>>();

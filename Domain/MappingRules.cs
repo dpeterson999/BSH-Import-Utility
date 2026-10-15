@@ -16,6 +16,7 @@ namespace BSH_Import_Utility.Domain
     {
         /// <summary>
         /// Tables that have an Order Number column but must never receive mapped PDF values.
+        /// "Copy of BSH" and "Paste Errors" are leftovers made by Access, not order tables.
         /// </summary>
         private static readonly HashSet<string> ExcludedTables = new(StringComparer.OrdinalIgnoreCase)
         {

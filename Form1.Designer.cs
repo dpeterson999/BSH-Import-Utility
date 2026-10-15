@@ -102,7 +102,7 @@ namespace BSH_Import_Utility
             this.ignoredColumnsToolStripMenuItem.Name = "ignoredColumnsToolStripMenuItem";
             this.ignoredColumnsToolStripMenuItem.Size = new System.Drawing.Size(210, 22);
             this.ignoredColumnsToolStripMenuItem.Text = "Ignored Columns";
-            this.ignoredColumnsToolStripMenuItem.Click += new System.EventHandler(this.btnShowIgnoredColumns_Click);
+            this.ignoredColumnsToolStripMenuItem.Click += new System.EventHandler(this.ignoredColumnsToolStripMenuItem_Click);
             //
             // columnMappingsToolStripMenuItem
             //
