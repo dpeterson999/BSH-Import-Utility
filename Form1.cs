@@ -665,5 +665,46 @@ namespace BSH_Import_Utility
         {
             Application.Exit();
         }
+
+        // ---------- Help ----------
+
+        /// <summary>The user guide PDF, exported from the guide document and installed with the app.</summary>
+        private static readonly string UserGuidePath =
+            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Help", "BSH PDF Importer User Guide.pdf");
+
+        private void userGuideToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            if (!File.Exists(UserGuidePath))
+            {
+                MessageBox.Show(this,
+                    "The user guide isn't installed with this copy of the app. Contact your administrator.",
+                    "User Guide", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            try
+            {
+                Process.Start(UserGuidePath);
+            }
+            catch (Exception ex)
+            {
+                ImportLogger.Log($"Opening the user guide failed: {ex.Message}");
+                MessageBox.Show(this,
+                    $"The user guide could not be opened. Windows may not have a PDF viewer set up.\n\n{ex.Message}",
+                    "User Guide", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        private void aboutToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            // ClickOnce installs report the published version (e.g. 1.0.0.26); a local build reports the assembly version.
+            string version = System.Deployment.Application.ApplicationDeployment.IsNetworkDeployed
+                ? System.Deployment.Application.ApplicationDeployment.CurrentDeployment.CurrentVersion.ToString()
+                : Application.ProductVersion + " (not installed)";
+
+            MessageBox.Show(this,
+                $"BSH PDF Importer\n\nVersion {version}\nDatabase: {dbPath}",
+                "About", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
     }
 }
