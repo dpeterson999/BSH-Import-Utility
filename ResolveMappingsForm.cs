@@ -23,12 +23,21 @@ namespace BSH_Import_Utility
         /// <summary>The user's choices, filled when the dialog closes with OK.</summary>
         public List<MappingChoice> Choices { get; } = new();
 
+        /// <summary>
+        /// Items the user marked "Not in database": their table or column has to be added in Access
+        /// first, so the order can't be imported yet. Filled when the dialog closes with OK.
+        /// </summary>
+        public List<UnresolvedLabel> NotInDatabase { get; } = new();
+
+        private readonly Button _save;
+
         private sealed class Row
         {
             public UnresolvedLabel Item = null!;
             public ComboBox Table = null!;
             public ComboBox Column = null!;
             public CheckBox Ignore = null!;
+            public CheckBox NotInDatabase = null!;
         }
 
         public ResolveMappingsForm(
@@ -53,21 +62,23 @@ namespace BSH_Import_Utility
             var intro = new Label
             {
                 Dock = DockStyle.Top,
-                Height = 78,
+                Height = 112,
                 Padding = new Padding(12, 10, 12, 0),
                 Text =
                     (introText ??
                      $"Order {orderNumber} ({fileName}) has {items.Count} item(s) that can't be saved yet. " +
                      "Nothing from this order has been saved.") + "\n\n" +
                     "For each item, choose the table and column it belongs in, or tick Ignore if it is not an order item " +
-                    "(for example, stray text from the PDF). Your choices are remembered for future imports."
+                    "(for example, stray text from the PDF). Your choices are remembered for future imports.\n\n" +
+                    "If the right table or column isn't in the database yet, tick Not in database. The order won't be imported, " +
+                    "and you'll get a note to send to whoever manages the database."
             };
 
             var grid = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
                 AutoScroll = true,
-                ColumnCount = 5,
+                ColumnCount = 6,
                 Padding = new Padding(12, 0, 12 + SystemInformation.VerticalScrollBarWidth, 0),
                 GrowStyle = TableLayoutPanelGrowStyle.AddRows
             };
@@ -76,9 +87,10 @@ namespace BSH_Import_Utility
             grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 200));
             grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
             grid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            grid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
 
             var bold = new Font(Font, FontStyle.Bold);
-            foreach (var header in new[] { "Item on the PDF", "Value", "Table", "Column", "" })
+            foreach (var header in new[] { "Item on the PDF", "Value", "Table", "Column", "", "" })
                 grid.Controls.Add(new Label { Text = header, Font = bold, AutoSize = true, Margin = new Padding(3, 6, 3, 6) });
 
             foreach (var item in items)
@@ -92,12 +104,12 @@ namespace BSH_Import_Utility
                 Padding = new Padding(12, 8, 12, 8)
             };
 
-            var save = new Button { Text = "Save and retry", AutoSize = true };
-            save.Click += Save_Click;
+            _save = new Button { Text = SaveAndRetryText, AutoSize = true };
+            _save.Click += Save_Click;
 
             var skip = new Button { Text = "Skip this order", AutoSize = true, DialogResult = DialogResult.Cancel };
 
-            buttons.Controls.Add(save);
+            buttons.Controls.Add(_save);
             buttons.Controls.Add(skip);
             CancelButton = skip;
 
@@ -106,6 +118,9 @@ namespace BSH_Import_Utility
             Controls.Add(buttons);
             Controls.Add(intro);
         }
+
+        private const string SaveAndRetryText = "Save and retry";
+        private const string SaveOnlyText = "Save (order not imported)";
 
         private void AddRow(TableLayoutPanel grid, UnresolvedLabel item)
         {
@@ -121,6 +136,9 @@ namespace BSH_Import_Utility
                 note = "Suggested match filled in. Please check it before saving.";
             else
                 note = "Not set up yet.";
+
+            if (!structural && !string.IsNullOrEmpty(item.Section))
+                note += $" Form section: {item.Section}.";
 
             var labelPanel = new FlowLayoutPanel
             {
@@ -144,6 +162,7 @@ namespace BSH_Import_Utility
             var table = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill, Margin = new Padding(3, 4, 3, 3) };
             var column = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill, Margin = new Padding(3, 4, 3, 3) };
             var ignore = new CheckBox { Text = "Ignore", AutoSize = true, Margin = new Padding(6, 6, 3, 3) };
+            var notInDatabase = new CheckBox { Text = "Not in database", AutoSize = true, Margin = new Padding(6, 6, 3, 3) };
 
             table.Items.AddRange(_targets.Keys.Cast<object>().ToArray());
             table.SelectedIndexChanged += (_, _) =>
@@ -152,10 +171,24 @@ namespace BSH_Import_Utility
                 if (table.SelectedItem is string t && _targets.TryGetValue(t, out var cols))
                     column.Items.AddRange(cols.Cast<object>().ToArray());
             };
+            // Ignore and Not in database are alternatives to choosing a table and column.
+            void UpdateEnabled()
+            {
+                table.Enabled = !ignore.Checked && !notInDatabase.Checked;
+                column.Enabled = table.Enabled;
+                _save.Text = _rows.Any(r => r.NotInDatabase.Checked) ? SaveOnlyText : SaveAndRetryText;
+            }
             ignore.CheckedChanged += (_, _) =>
             {
-                table.Enabled = !ignore.Checked;
-                column.Enabled = !ignore.Checked;
+                if (ignore.Checked)
+                    notInDatabase.Checked = false;
+                UpdateEnabled();
+            };
+            notInDatabase.CheckedChanged += (_, _) =>
+            {
+                if (notInDatabase.Checked)
+                    ignore.Checked = false;
+                UpdateEnabled();
             };
 
             if (suggestion != null)
@@ -173,6 +206,7 @@ namespace BSH_Import_Utility
                 table.Enabled = false;
                 column.Enabled = false;
                 ignore.Enabled = false;
+                notInDatabase.Enabled = false;
             }
 
             grid.Controls.Add(labelPanel);
@@ -180,8 +214,9 @@ namespace BSH_Import_Utility
             grid.Controls.Add(table);
             grid.Controls.Add(column);
             grid.Controls.Add(ignore);
+            grid.Controls.Add(notInDatabase);
 
-            _rows.Add(new Row { Item = item, Table = table, Column = column, Ignore = ignore });
+            _rows.Add(new Row { Item = item, Table = table, Column = column, Ignore = ignore, NotInDatabase = notInDatabase });
         }
 
         private static object? FindItem(ComboBox box, string text) =>
@@ -190,6 +225,7 @@ namespace BSH_Import_Utility
         private void Save_Click(object? sender, EventArgs e)
         {
             var choices = new List<MappingChoice>();
+            var notInDatabase = new List<UnresolvedLabel>();
             var warnings = new List<string>();
 
             foreach (var row in _rows)
@@ -207,12 +243,20 @@ namespace BSH_Import_Utility
                     continue;
                 }
 
+                if (row.NotInDatabase.Checked)
+                {
+                    notInDatabase.Add(row.Item);
+                    continue;
+                }
+
                 string? tableName = row.Table.SelectedItem as string;
                 string? columnName = row.Column.SelectedItem as string;
 
                 string? error = MappingRules.Validate(label, tableName, columnName, _targets);
                 if (error != null)
                 {
+                    if (tableName == null || columnName == null)
+                        error += "\n\nIf its table or column hasn't been added to the database yet, tick Not in database.";
                     MessageBox.Show(this, error, "Check This Item", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     (row.Table.Enabled ? row.Table : (Control)row.Ignore).Focus();
                     return;
@@ -222,7 +266,7 @@ namespace BSH_Import_Utility
                 warnings.AddRange(MappingRules.GetCategoryWarnings(label, tableName!, columnName!, _existingMap, _targets));
             }
 
-            if (choices.Count == 0)
+            if (choices.Count == 0 && notInDatabase.Count == 0)
             {
                 MessageBox.Show(this,
                     "Only required order fields are listed, and they can't be changed here. " +
@@ -250,6 +294,8 @@ namespace BSH_Import_Utility
 
             Choices.Clear();
             Choices.AddRange(choices);
+            NotInDatabase.Clear();
+            NotInDatabase.AddRange(notInDatabase);
             DialogResult = DialogResult.OK;
         }
     }

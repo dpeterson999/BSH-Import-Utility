@@ -25,6 +25,8 @@ namespace BSH_Import_Utility
         private const string ResultIgnored = "Ignored";
         private const string ResultIgnoredBuiltIn = "Ignored (built in)";
         private const string ResultNoValue = "Skipped (no quantity)";
+        private const string ResultNotSetUpNotOrdered = "Not set up (not ordered)";
+        private const string ResultMissingNotOrdered = "Column missing (not ordered)";
 
         private const string FilterProblems = "Items that need attention";
         private const string FilterImport = "Items that would be imported";
@@ -119,10 +121,11 @@ namespace BSH_Import_Utility
         {
             _orders = _runCheck();
             _summary.Text = BuildSummary();
-            _setUp.Enabled = _orders.Any(o => o.BlockingCount > 0);
+            bool needsSetUp = _orders.Any(o => o.Labels.Any(l => l.NeedsSetUp));
+            _setUp.Enabled = needsSetUp;
 
             if (pickFilter)
-                _filter.SelectedItem = _orders.Any(o => o.BlockingCount > 0) ? FilterProblems : FilterImport;
+                _filter.SelectedItem = needsSetUp ? FilterProblems : FilterImport;
             else
                 RefreshGrid();
         }
@@ -141,6 +144,13 @@ namespace BSH_Import_Utility
                 sb.Append(OrderVerdict(order));
             }
 
+            if (_orders.Any(o => o.NotSetUpNotOrderedCount > 0))
+            {
+                sb.AppendLine().AppendLine();
+                sb.Append("Items marked \"not ordered\" are on the form but have no quantity on this order, so they won't stop this import. " +
+                          "The first import that orders one will stop and ask about it. Click Set Up Unrecognized Items to set them up now.");
+            }
+
             return sb.ToString();
         }
 
@@ -157,11 +167,15 @@ namespace BSH_Import_Utility
             if (order.AlreadyImported)
                 return $"already in the database, so the import would skip it. ({items} otherwise.)";
 
+            string notOrdered = order.NotSetUpNotOrderedCount > 0
+                ? $" {order.NotSetUpNotOrderedCount} other item(s) on the form are not set up (not ordered)."
+                : "";
+
             if (order.BlockingCount > 0)
                 return $"{items}, but {order.BlockingCount} item(s) are not set up. " +
-                       "The import would stop and ask about them, or click Set Up Unrecognized Items now.";
+                       "The import would stop and ask about them, or click Set Up Unrecognized Items now." + notOrdered;
 
-            return $"ready to import. {items}.";
+            return $"ready to import. {items}.{notOrdered}";
         }
 
         // ---------- Grid ----------
@@ -170,6 +184,8 @@ namespace BSH_Import_Utility
         {
             if (label.Status == LabelStatus.Ignored)
                 return label.IsBuiltInIgnore ? ResultIgnoredBuiltIn : ResultIgnored;
+            if (label.NotSetUpNotOrdered)
+                return label.Status == LabelStatus.MissingColumn ? ResultMissingNotOrdered : ResultNotSetUpNotOrdered;
             if (!label.HasValue)
                 return ResultNoValue;
 
@@ -203,7 +219,7 @@ namespace BSH_Import_Utility
 
                     bool include = filter switch
                     {
-                        FilterProblems => label.BlocksImport,
+                        FilterProblems => label.NeedsSetUp,
                         FilterImport => label.HasValue && label.Status != LabelStatus.Ignored,
                         FilterIgnored => label.Status == LabelStatus.Ignored,
                         _ => true
@@ -232,6 +248,8 @@ namespace BSH_Import_Utility
                 string result = (string)gridRow.Cells["Result"].Value;
                 if (result == ResultNotSetUp || result == ResultMissing)
                     gridRow.DefaultCellStyle.ForeColor = Color.Firebrick;
+                else if (result == ResultNotSetUpNotOrdered || result == ResultMissingNotOrdered)
+                    gridRow.DefaultCellStyle.ForeColor = Color.Chocolate;
                 else if (result != ResultReady)
                     gridRow.DefaultCellStyle.ForeColor = SystemColors.GrayText;
             }
@@ -245,15 +263,18 @@ namespace BSH_Import_Utility
 
         private void SetUpItems()
         {
-            var blocking = _orders.Where(o => o.BlockingCount > 0).ToList();
+            var blocking = _orders.Where(o => o.Labels.Any(l => l.NeedsSetUp)).ToList();
 
+            // Not-ordered items have no quantity, so they show a blank value; when the same label
+            // was ordered on another order, that order's quantity is shown instead.
             var items = blocking
-                .SelectMany(o => o.Labels.Where(l => l.BlocksImport))
+                .SelectMany(o => o.Labels.Where(l => l.NeedsSetUp))
                 .GroupBy(l => l.PdfLabel, StringComparer.OrdinalIgnoreCase)
-                .Select(g => g.First())
-                .Select(l => new UnresolvedLabel(l.PdfLabel, l.Value,
+                .Select(g => g.FirstOrDefault(l => l.HasValue) ?? g.First())
+                .Select(l => new UnresolvedLabel(l.PdfLabel, l.HasValue ? l.Value : null,
                     l.Status == LabelStatus.MissingColumn ? l.TableName : null,
-                    l.Status == LabelStatus.MissingColumn ? l.ColumnName : null))
+                    l.Status == LabelStatus.MissingColumn ? l.ColumnName : null,
+                    l.Section))
                 .ToList();
 
             if (items.Count == 0)

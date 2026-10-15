@@ -70,25 +70,40 @@ namespace BSH_Import_Utility
             _repo = new AccessRepository(connectionString, columnToTableMap, userIgnoredLabels);
         }
 
-        /// <summary>
-        /// Lets the user map or ignore the labels that blocked an order. Returns true when
-        /// choices were saved and the order should be retried.
-        /// </summary>
-        private bool ResolveMappings(InsertOutcome outcome, string displayFile)
+        private enum ResolveResult
         {
-            if (outcome.UnresolvedLabels.Count == 0)
-                return false;
-
-            string orderNumber = string.IsNullOrWhiteSpace(outcome.OrderNumber) ? "(Unknown)" : outcome.OrderNumber!;
-            return ResolveLabels(outcome.UnresolvedLabels, orderNumber, Path.GetFileName(displayFile), introText: null);
+            /// <summary>Cancelled, or the choices could not be saved.</summary>
+            NotSaved,
+            /// <summary>Every item was mapped or ignored and saved; the order can be retried.</summary>
+            Saved,
+            /// <summary>Some items need a table or column added in Access first; any other choices were saved.</summary>
+            NeedsDatabaseChanges
         }
 
         /// <summary>
-        /// Shows the Unrecognized Items dialog for these labels and saves the choices. Returns true
-        /// when choices were saved (mappings are reloaded). introText replaces the dialog's
+        /// Lets the user map or ignore the labels that blocked an order.
+        /// </summary>
+        private ResolveResult ResolveMappings(InsertOutcome outcome, string displayFile, IEnumerable<ProcessedLine> lines)
+        {
+            if (outcome.UnresolvedLabels.Count == 0)
+                return ResolveResult.NotSaved;
+
+            var sections = PdfLabelChecker.FindSections(lines);
+            var items = outcome.UnresolvedLabels
+                .Select(u => sections.TryGetValue(u.PdfLabel, out var section) ? u with { Section = section } : u)
+                .ToList();
+
+            string orderNumber = string.IsNullOrWhiteSpace(outcome.OrderNumber) ? "(Unknown)" : outcome.OrderNumber!;
+            return ResolveLabels(items, orderNumber, Path.GetFileName(displayFile), introText: null);
+        }
+
+        /// <summary>
+        /// Shows the Unrecognized Items dialog for these labels and saves the choices (mappings are
+        /// reloaded). Items marked "Not in database" are listed in a note for whoever manages the
+        /// database; the app never adds tables or columns itself. introText replaces the dialog's
         /// opening sentence; null uses the import wording.
         /// </summary>
-        private bool ResolveLabels(IReadOnlyList<UnresolvedLabel> items, string orderNumber, string fileName, string? introText)
+        private ResolveResult ResolveLabels(IReadOnlyList<UnresolvedLabel> items, string orderNumber, string fileName, string? introText)
         {
             Dictionary<string, List<string>> schema;
             try
@@ -100,7 +115,7 @@ namespace BSH_Import_Utility
                 ImportLogger.Log($"Could not read the database schema to resolve mappings: {ex.Message}");
                 MessageBox.Show(this, $"The database tables could not be read.\n\n{ex.Message}",
                     "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return false;
+                return ResolveResult.NotSaved;
             }
 
             using var dlg = new ResolveMappingsForm(
@@ -112,29 +127,59 @@ namespace BSH_Import_Utility
                 introText);
 
             if (dlg.ShowDialog(this) != DialogResult.OK)
-                return false;
+                return ResolveResult.NotSaved;
 
+            if (dlg.Choices.Count > 0)
+            {
+                try
+                {
+                    new ColumnMapRepository(connectionString).SaveChoices(dlg.Choices);
+                }
+                catch (Exception ex)
+                {
+                    ImportLogger.Log($"Saving mappings for Order {orderNumber} failed: {ex.Message}");
+                    MessageBox.Show(this, $"Your choices could not be saved.\n\n{ex.Message}",
+                        "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return ResolveResult.NotSaved;
+                }
+
+                foreach (var choice in dlg.Choices)
+                {
+                    ImportLogger.Log(choice.Ignore
+                        ? $"Mapping saved (Order {orderNumber}): \"{choice.PdfLabel}\" → ignored"
+                        : $"Mapping saved (Order {orderNumber}): \"{choice.PdfLabel}\" → {choice.TableName}.{choice.ColumnName}");
+                }
+
+                ReloadMappings();
+            }
+
+            if (dlg.NotInDatabase.Count == 0)
+                return ResolveResult.Saved;
+
+            foreach (var item in dlg.NotInDatabase)
+                ImportLogger.Log($"Not in database (Order {orderNumber}): \"{item.PdfLabel}\" needs a table or column added in Access.");
+
+            string request = DatabaseRequest.Build(orderNumber, Path.GetFileName(dbPath), dlg.NotInDatabase)
+                .Replace("\r\n", "\n").Replace("\n", Environment.NewLine);
+            string howToSend;
             try
             {
-                new ColumnMapRepository(connectionString).SaveChoices(dlg.Choices);
+                Clipboard.SetText(request);
+                howToSend = "This note has been copied. Paste it into an email or message to whoever manages the database.";
             }
             catch (Exception ex)
             {
-                ImportLogger.Log($"Saving mappings for Order {orderNumber} failed: {ex.Message}");
-                MessageBox.Show(this, $"Your choices could not be saved.\n\n{ex.Message}",
-                    "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return false;
+                ImportLogger.Log($"Copying the database request failed: {ex.Message}");
+                howToSend = "Send this note to whoever manages the database (select the text and copy it).";
             }
 
-            foreach (var choice in dlg.Choices)
+            using (var note = new SelectableMessageForm("Items Need Adding to the Database",
+                       howToSend + Environment.NewLine + Environment.NewLine + request))
             {
-                ImportLogger.Log(choice.Ignore
-                    ? $"Mapping saved (Order {orderNumber}): \"{choice.PdfLabel}\" → ignored"
-                    : $"Mapping saved (Order {orderNumber}): \"{choice.PdfLabel}\" → {choice.TableName}.{choice.ColumnName}");
+                note.ShowDialog(this);
             }
 
-            ReloadMappings();
-            return true;
+            return ResolveResult.NeedsDatabaseChanges;
         }
 
         /// <summary>
@@ -343,11 +388,18 @@ namespace BSH_Import_Utility
                     var outcome = _repo.InsertDataIntoDatabase(processedLines.ToArray(), displayFile);
 
                     // Let the user fix unrecognized items, then retry the same order. Each attempt
-                    // runs in its own transaction, so a failed attempt leaves nothing behind.
-                    while (outcome.Status == InsertStatus.MissingColumnMappings &&
-                           ResolveMappings(outcome, displayFile))
+                    // runs in its own transaction, so a failed attempt leaves nothing behind. When some
+                    // items need adding to the database first, retry once so the skipped-order summary
+                    // lists only what is still missing, then stop asking.
+                    while (outcome.Status == InsertStatus.MissingColumnMappings)
                     {
+                        var resolved = ResolveMappings(outcome, displayFile, processedLines);
+                        if (resolved == ResolveResult.NotSaved)
+                            break;
+
                         outcome = _repo.InsertDataIntoDatabase(processedLines.ToArray(), displayFile);
+                        if (resolved == ResolveResult.NeedsDatabaseChanges)
+                            break;
                     }
 
                     switch (outcome.Status)
@@ -545,7 +597,8 @@ namespace BSH_Import_Utility
 
             bool SetUpItems(IReadOnlyList<UnresolvedLabel> items, string orderNumbers, string source) =>
                 ResolveLabels(items, orderNumbers, source,
-                    $"Testing {source} found {items.Count} item(s) that are not set up. Nothing has been imported.");
+                    $"Testing {source} found {items.Count} item(s) that are not set up. Nothing has been imported.")
+                != ResolveResult.NotSaved;
 
             PdfTestForm dlg;
             try

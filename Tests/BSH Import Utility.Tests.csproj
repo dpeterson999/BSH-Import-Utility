@@ -17,6 +17,7 @@
     <Compile Include="..\Config\ColumnMapLoader.cs" Link="Linked\ColumnMapLoader.cs" />
     <Compile Include="..\Domain\ColumnMapEntry.cs" Link="Linked\ColumnMapEntry.cs" />
     <Compile Include="..\Domain\ColumnMapRow.cs" Link="Linked\ColumnMapRow.cs" />
+    <Compile Include="..\Domain\DatabaseRequest.cs" Link="Linked\DatabaseRequest.cs" />
     <Compile Include="..\Domain\ImportConstants.cs" Link="Linked\ImportConstants.cs" />
     <Compile Include="..\Domain\MappingImportPlanner.cs" Link="Linked\MappingImportPlanner.cs" />
     <Compile Include="..\Domain\MappingRules.cs" Link="Linked\MappingRules.cs" />

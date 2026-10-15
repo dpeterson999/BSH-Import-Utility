@@ -5,8 +5,9 @@ namespace BSH_Import_Utility.Domain
     /// <summary>
     /// A PDF label that blocked an import. MappedTable/MappedColumn are null when the label
     /// has no mapping at all, and set when it is mapped to a column the database no longer has.
+    /// Section is the form section it is listed under (e.g. "BREADS"), when known.
     /// </summary>
-    public record UnresolvedLabel(string PdfLabel, object? Value, string? MappedTable, string? MappedColumn)
+    public record UnresolvedLabel(string PdfLabel, object? Value, string? MappedTable, string? MappedColumn, string? Section = null)
     {
         public bool IsMappedToMissingColumn => !string.IsNullOrEmpty(MappedTable);
     }
