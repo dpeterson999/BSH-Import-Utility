@@ -40,7 +40,7 @@ namespace BSH_Import_Utility.Domain
                           "plus one column per item as above.");
             sb.AppendLine("- Also add new columns to any queries or reports that list that table's items.");
             sb.AppendLine();
-            sb.Append("Then import the order again (or use Test a PDF) and choose the new table and column for each item.");
+            sb.Append("Then import the order again (or use Test a PDF). If asked, choose the new table and column for each item.");
 
             return sb.ToString();
         }

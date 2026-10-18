@@ -45,7 +45,7 @@ The app never adds tables or columns to the database. When any item is marked **
 - a new section: a new table with an `Order Number` Short Text primary key related to `BSH.[Order Number]`, plus one column per item
 - any queries or reports that list that table's items (for example `BreadAndDairy`) need the new column added too
 
-Once it has been added, import the order again (or use **Test a PDF**) and choose the new table and column.
+Once it has been added, import the order again (or use **Test a PDF**). If asked, choose the new table and column.
 
 The four order fields the app depends on (Order Number, Recipient, Ward and Storehouse) are fixed and cannot be changed from the app.
 
