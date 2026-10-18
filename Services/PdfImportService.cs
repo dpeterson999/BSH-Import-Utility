@@ -13,6 +13,13 @@ namespace BSH_Import_Utility.Services
     public class PdfImportService
     {
         private static readonly Regex EmailRegex = new Regex(@"^[^@\s]+@[^@\s]+\.[^@\s]+$",RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        /// <summary>
+        /// Reads one order form into label/value lines. iText's simple extraction returns the form
+        /// one text line at a time, and an item's quantity (when there is one) is the line right
+        /// after its label. Lines without a quantity, including section headings such as
+        /// "CANNED MEATS", come back with a value of 0; the import skips those.
+        /// </summary>
         public List<ProcessedLine> ParsePdfFile(string filePath)
         {
             var processedLines = new List<ProcessedLine>();
@@ -62,6 +69,10 @@ namespace BSH_Import_Utility.Services
             return raw;
         }
 
+        /// <summary>
+        /// Turns one extracted line into a ProcessedLine. When the next line is used as this
+        /// line's value, index is advanced past it so it is not read again as a label.
+        /// </summary>
         private void ProcessLine(string line, string? nextLine, ref int index, ref bool firstOrderFound, List<ProcessedLine> processedLines)
         {
             // iText sometimes merges two adjacent field labels onto one extracted line,
@@ -90,6 +101,8 @@ namespace BSH_Import_Utility.Services
                 return;
             }
 
+            // Every page repeats the "Order #0430324139" header, so only the first one counts.
+            // Substring(6) drops "Order " and TrimStart drops the '#'.
             if (line.StartsWith("Order #") && !firstOrderFound)
             {
                 processedLines.Add(new ProcessedLine("Order Number", line.Substring(6).TrimStart('#')));
@@ -116,20 +129,15 @@ namespace BSH_Import_Utility.Services
                      line.StartsWith(ImportConstants.TextLabel) ||
                      line.StartsWith(ImportConstants.EmailLabel))
             {
-                string value;
-
-                if (line.StartsWith("Project Number") && nextLine?.StartsWith("Recipient") == true)
-                {
-                    value = ""; // Assume "Project Number" is empty
-                }
-                else
-                {
-                    value = nextLine?.Trim() ?? "";
-                    index++;
-                }
+                // Header fields: the value is the next line.
+                string value = nextLine?.Trim() ?? "";
+                index++;
 
                 processedLines.Add(new ProcessedLine(NormalizeLabel(line), value));
             }
+            // An item with a quantity: the quantity is the next line. If an item had no quantity
+            // and the next item's label were only a number, the two would be paired; no current
+            // label is a bare number.
             else if (int.TryParse(nextLine?.Trim(), out int nextValue) && nextValue != 0)
             {
                 processedLines.Add(new ProcessedLine(line, nextValue));
@@ -146,6 +154,11 @@ namespace BSH_Import_Utility.Services
             return EmailRegex.IsMatch(input);
         }
 
+        /// <summary>
+        /// The unit line under the order number, e.g. "Pontiac Branch (Spanish) (48305) Grand Blanc
+        /// Michigan Stake (510114)": a ward or branch plus its stake, or a Community Service
+        /// Organization. It has no label of its own on the form.
+        /// </summary>
         private bool IsWardLine(string line)
         {
             if (string.IsNullOrWhiteSpace(line))

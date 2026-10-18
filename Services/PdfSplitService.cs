@@ -34,7 +34,8 @@ namespace BSH_Import_Utility.Services
         /// Scans the PDF and returns the 1-based page number where the first
         /// "Bishop's Order for Food and Supplies" header appears.
         /// This is always the first page of the first individual order.
-        /// Returns -1 if not found.
+        /// Returns -1 if not found. The search leaves off "Bishop'" so it matches whether
+        /// the PDF uses a straight or curly apostrophe.
         /// </summary>
         public static int FindFirstOrderPage(string pdfPath)
         {
@@ -61,6 +62,10 @@ namespace BSH_Import_Utility.Services
         /// <summary>
         /// Flattens a PDF and splits it into 2-page PDFs starting at startPage.
         /// Uses the source PDF directory and returns generated files.
+        /// Every order in a picklist is assumed to be exactly two pages. If an order were ever
+        /// one or three pages, every order after it would be split in the wrong place.
+        /// The temporary files are written next to the source PDF, so that folder must be
+        /// writable; the caller deletes them with <see cref="PurgeGeneratedFiles"/>.
         /// </summary>
         public static List<string> FlattenAndSplitTwoPages(
             string sourcePdfPath,
@@ -92,6 +97,11 @@ namespace BSH_Import_Utility.Services
             return outputFiles;
         }
 
+        /// <summary>
+        /// Copies the PDF with any fillable form fields turned into plain page content.
+        /// Storehouse picklists checked in October 2026 had no form fields, so for them
+        /// this is a straight copy.
+        /// </summary>
         private static void FlattenPdf(string source, string output)
         {
             using var reader = new PdfReader(source);

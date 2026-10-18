@@ -202,9 +202,17 @@
   <ItemGroup>
     <Compile Include="Config\ColumnMapLoader.cs" />
     <Compile Include="Data\AccessRepository.cs" />
+    <Compile Include="Data\ColumnMapRepository.cs" />
     <Compile Include="Data\InsertOutcome.cs" />
+    <Compile Include="Domain\ColumnMapEntry.cs" />
+    <Compile Include="Domain\ColumnMapRow.cs" />
+    <Compile Include="Domain\DatabaseRequest.cs" />
     <Compile Include="Domain\ImportConstants.cs" />
+    <Compile Include="Domain\MappingImportPlanner.cs" />
+    <Compile Include="Domain\MappingRules.cs" />
+    <Compile Include="Domain\PdfLabelChecker.cs" />
     <Compile Include="Domain\ProcessedLine.cs" />
+    <Compile Include="Domain\UnresolvedLabel.cs" />
     <Compile Include="Form1.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -215,6 +223,18 @@
     <Compile Include="Infrastructure\IsExternalInit.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="MappingEditForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="MappingManagerForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="PdfTestForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="ResolveMappingsForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="SelectableMessageForm.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -235,6 +255,9 @@
       <DependentUpon>Resources.resx</DependentUpon>
     </Compile>
     <Content Include="ColumnToTableMap.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Help\BSH PDF Importer User Guide.pdf">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <None Include="BSH Import Tool_TemporaryKey.pfx" />

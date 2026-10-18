@@ -16,14 +16,17 @@ namespace BSH_Import_Utility.Data
     {
         private readonly string _connectionString;
         private readonly Dictionary<string, (string TableName, string ColumnName)> _columnToTableMap;
+        private readonly ISet<string> _userIgnoredLabels;
         private Dictionary<string, List<string>>? _cachedTableColumns;
         private List<string>? _cachedRouteInfoStopNames;
 
         public AccessRepository(string connectionString,
-            Dictionary<string, (string TableName, string ColumnName)> columnToTableMap)
+            Dictionary<string, (string TableName, string ColumnName)> columnToTableMap,
+            ISet<string> userIgnoredLabels)
         {
             _connectionString = connectionString;
             _columnToTableMap = columnToTableMap;
+            _userIgnoredLabels = userIgnoredLabels;
         }
 
         public DataTable LoadBshGrid()
@@ -40,12 +43,26 @@ namespace BSH_Import_Utility.Data
             }
         }
 
+        /// <summary>
+        /// Live table → columns (no AutoNumber columns, no MSys tables), cached for the life of
+        /// this repository. Create a new repository after a schema change to refresh it.
+        /// </summary>
+        public Dictionary<string, List<string>> GetSchema() =>
+            _cachedTableColumns ??= GetTableColumns();
+
+        /// <summary>
+        /// Saves one order. Skips ignored labels and zero values, groups the rest by table using
+        /// the mapping, then stops without saving if there is no order number, the order already
+        /// exists, or any label is unmapped or mapped to a missing column. Otherwise inserts one
+        /// row per table. Everything runs in one transaction, so a failed order leaves nothing behind.
+        /// </summary>
         public InsertOutcome InsertDataIntoDatabase(ProcessedLine[] processedLines, string fileName)
         {
             var tableColumns = _cachedTableColumns ??= GetTableColumns();
             var columnsByTable = new Dictionary<string, List<string>>();
             var valuesByTable = new Dictionary<string, List<object>>();
             var missingColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var unresolvedLabels = new List<UnresolvedLabel>();
 
             using (var connection = new OleDbConnection(_connectionString))
             {
@@ -63,7 +80,8 @@ namespace BSH_Import_Utility.Data
                             object columnValue = line.ColumnValue;
 
                             if (string.IsNullOrWhiteSpace(columnName) ||
-                                ImportConstants.IgnoredColumns.Contains(columnName.Trim()))
+                                ImportConstants.IgnoredColumns.Contains(columnName.Trim()) ||
+                                _userIgnoredLabels.Contains(columnName.Trim()))
                             {
                                 // ImportLogger.Log($"Ignored column: {columnName}");
                                 continue;
@@ -80,14 +98,17 @@ namespace BSH_Import_Utility.Data
 
                             if (match == null)
                             {
-                                if (!_columnToTableMap.ContainsKey(columnName))
+                                string label = columnName.Trim();
+
+                                if (!_columnToTableMap.TryGetValue(label, out var mapped))
                                 {
-                                    missingColumns.Add(columnName);
+                                    if (missingColumns.Add(label))
+                                        unresolvedLabels.Add(new UnresolvedLabel(label, columnValue, null, null));
                                 }
                                 else
                                 {
-                                    var mapped = _columnToTableMap[columnName];
-                                    missingColumns.Add($"{columnName} → {mapped.TableName}.{mapped.ColumnName} (missing in DB)");
+                                    if (missingColumns.Add($"{label} → {mapped.TableName}.{mapped.ColumnName} (missing in DB)"))
+                                        unresolvedLabels.Add(new UnresolvedLabel(label, columnValue, mapped.TableName, mapped.ColumnName));
                                 }
 
                                 continue;
@@ -109,6 +130,8 @@ namespace BSH_Import_Utility.Data
                                 valuesByTable[matchedTable] = new List<object>();
                             }
 
+                            // When two labels on one PDF map to the same column, the first one
+                            // wins and the second is only logged.
                             if (!columnsByTable[matchedTable].Contains(matchedColumn, StringComparer.OrdinalIgnoreCase))
                             {
                                 columnsByTable[matchedTable].Add(matchedColumn);
@@ -154,7 +177,8 @@ namespace BSH_Import_Utility.Data
                             {
                                 Status = InsertStatus.MissingColumnMappings,
                                 OrderNumber = orderNumber,
-                                MissingColumns = missingColumns.ToList()
+                                MissingColumns = missingColumns.ToList(),
+                                UnresolvedLabels = unresolvedLabels
                             };
                         }
 
@@ -212,6 +236,11 @@ namespace BSH_Import_Utility.Data
             }
         }
 
+        /// <summary>
+        /// Inserts one row. Adds "Order Number" to the given columns and values if it is not
+        /// already there. OLE DB parameters are positional (?), so values must stay in the same
+        /// order as columns.
+        /// </summary>
         private void ExecuteInsertQuery(
             string tableName,
             List<string> columns,
@@ -251,7 +280,7 @@ namespace BSH_Import_Utility.Data
                 return (mapped.TableName, mapped.ColumnName);
             }
 
-            // Mapped in JSON but column is missing from the live DB schema
+            // Mapped in ColumnMap but column is missing from the live DB schema
             return null;
         }
 
@@ -331,7 +360,15 @@ namespace BSH_Import_Utility.Data
             return names;
         }
 
-        private bool DoesOrderNumberExist(string orderNumber, OleDbConnection connection, OleDbTransaction transaction)
+        /// <summary>True when the BSH table already has this order, so an import would skip it.</summary>
+        public bool OrderExists(string orderNumber)
+        {
+            using var connection = new OleDbConnection(_connectionString);
+            connection.Open();
+            return DoesOrderNumberExist(orderNumber, connection, null);
+        }
+
+        private bool DoesOrderNumberExist(string orderNumber, OleDbConnection connection, OleDbTransaction? transaction)
         {
             string query = "SELECT COUNT(*) FROM BSH WHERE [Order Number] = ?";
             using (var command = new OleDbCommand(query, connection, transaction))
@@ -341,6 +378,11 @@ namespace BSH_Import_Utility.Data
             }
         }
 
+        /// <summary>
+        /// Reads the schema through ADOX because it reports which columns are AutoNumber, so they
+        /// can be left out. The ADOX COM reference is why the app builds with Visual Studio's
+        /// MSBuild rather than dotnet build.
+        /// </summary>
         private Dictionary<string, List<string>> GetTableColumns()
         {
             var tableColumns = new Dictionary<string, List<string>>();

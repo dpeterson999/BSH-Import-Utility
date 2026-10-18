@@ -18,27 +18,17 @@ namespace BSH_Import_Utility
     public partial class Form1 : Form
     {
         // Initializations
-        private string? dbPath = Properties.Settings.Default.DatabasePath;
-        private readonly string connectionString = null!;
-        private readonly Dictionary<string, (string TableName, string ColumnName)> columnToTableMap = null!;
-        private readonly AccessRepository _repo = null!;
+        private string? dbPath;
+        private string connectionString = null!;
+        private Dictionary<string, (string TableName, string ColumnName)> columnToTableMap =
+            new(StringComparer.OrdinalIgnoreCase);
+        private HashSet<string> userIgnoredLabels = new(StringComparer.OrdinalIgnoreCase);
+        private AccessRepository _repo = null!;
         private readonly PdfImportService _pdfService = null!;
 
         public Form1()
         {
             InitializeComponent();
-
-            // Load mapping config file.  If this file does not load, tables cannot be populated with records
-            try
-            {
-                columnToTableMap = ColumnMapLoader.Load("columnToTableMap.json");
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(ex.Message, "Config Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                Application.Exit();
-                return;
-            }
 
             // Resolve DB path
             dbPath = Properties.Settings.Default.DatabasePath;
@@ -47,17 +37,208 @@ namespace BSH_Import_Utility
             if (string.IsNullOrEmpty(dbPath) || !File.Exists(dbPath))
                 dbPath = PromptForDatabasePath();
 
+            _pdfService = new PdfImportService();
+
+            ConnectToDatabase();
+        }
+
+        /// <summary>
+        /// (Re)builds everything that depends on the current dbPath. Called at startup and
+        /// whenever the user picks a different database, so imports always go to the
+        /// database shown in the title bar.
+        /// </summary>
+        private void ConnectToDatabase()
+        {
             //
             // Requires Microsoft Access Database Engine 2016 x64
             //
             connectionString = $@"Provider=Microsoft.ACE.OLEDB.16.0;Data Source={dbPath};Persist Security Info=False;";
 
-            // Wire services
-            _repo = new AccessRepository(connectionString, columnToTableMap);
-            _pdfService = new PdfImportService();
+            ReloadMappings();
 
             UpdateWindowTitle();
             LoadGrid();
+        }
+
+        /// <summary>
+        /// Reloads the mapping from the database and replaces the repository, which also drops
+        /// its cached schema and RouteInfo names.
+        /// </summary>
+        private void ReloadMappings()
+        {
+            LoadColumnMap();
+            _repo = new AccessRepository(connectionString, columnToTableMap, userIgnoredLabels);
+        }
+
+        private enum ResolveResult
+        {
+            /// <summary>Cancelled, or the choices could not be saved.</summary>
+            NotSaved,
+            /// <summary>Every item was mapped or ignored and saved; the order can be retried.</summary>
+            Saved,
+            /// <summary>Some items need a table or column added in Access first; any other choices were saved.</summary>
+            NeedsDatabaseChanges
+        }
+
+        /// <summary>
+        /// Lets the user map or ignore the labels that blocked an order.
+        /// </summary>
+        private ResolveResult ResolveMappings(InsertOutcome outcome, string displayFile, IEnumerable<ProcessedLine> lines)
+        {
+            if (outcome.UnresolvedLabels.Count == 0)
+                return ResolveResult.NotSaved;
+
+            var sections = PdfLabelChecker.FindSections(lines);
+            var items = outcome.UnresolvedLabels
+                .Select(u => sections.TryGetValue(u.PdfLabel, out var section) ? u with { Section = section } : u)
+                .ToList();
+
+            string orderNumber = string.IsNullOrWhiteSpace(outcome.OrderNumber) ? "(Unknown)" : outcome.OrderNumber!;
+            return ResolveLabels(items, orderNumber, Path.GetFileName(displayFile), introText: null);
+        }
+
+        /// <summary>
+        /// Shows the Unrecognized Items dialog for these labels and saves the choices (mappings are
+        /// reloaded). Items marked "Not in database" are listed in a note for whoever manages the
+        /// database; the app never adds tables or columns itself. introText replaces the dialog's
+        /// opening sentence; null uses the import wording.
+        /// </summary>
+        private ResolveResult ResolveLabels(IReadOnlyList<UnresolvedLabel> items, string orderNumber, string fileName, string? introText)
+        {
+            Dictionary<string, List<string>> schema;
+            try
+            {
+                schema = _repo.GetSchema();
+            }
+            catch (Exception ex)
+            {
+                ImportLogger.Log($"Could not read the database schema to resolve mappings: {ex.Message}");
+                MessageBox.Show(this, $"The database tables could not be read.\n\n{ex.Message}",
+                    "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return ResolveResult.NotSaved;
+            }
+
+            using var dlg = new ResolveMappingsForm(
+                orderNumber,
+                fileName,
+                items,
+                MappingRules.GetSelectableTargets(schema),
+                columnToTableMap,
+                introText);
+
+            if (dlg.ShowDialog(this) != DialogResult.OK)
+                return ResolveResult.NotSaved;
+
+            if (dlg.Choices.Count > 0)
+            {
+                try
+                {
+                    new ColumnMapRepository(connectionString).SaveChoices(dlg.Choices);
+                }
+                catch (Exception ex)
+                {
+                    ImportLogger.Log($"Saving mappings for Order {orderNumber} failed: {ex.Message}");
+                    MessageBox.Show(this, $"Your choices could not be saved.\n\n{ex.Message}",
+                        "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return ResolveResult.NotSaved;
+                }
+
+                foreach (var choice in dlg.Choices)
+                {
+                    ImportLogger.Log(choice.Ignore
+                        ? $"Mapping saved (Order {orderNumber}): \"{choice.PdfLabel}\" → ignored"
+                        : $"Mapping saved (Order {orderNumber}): \"{choice.PdfLabel}\" → {choice.TableName}.{choice.ColumnName}");
+                }
+
+                ReloadMappings();
+            }
+
+            if (dlg.NotInDatabase.Count == 0)
+                return ResolveResult.Saved;
+
+            foreach (var item in dlg.NotInDatabase)
+                ImportLogger.Log($"Not in database (Order {orderNumber}): \"{item.PdfLabel}\" needs a table or column added in Access.");
+
+            string request = DatabaseRequest.Build(orderNumber, Path.GetFileName(dbPath), dlg.NotInDatabase)
+                .Replace("\r\n", "\n").Replace("\n", Environment.NewLine);
+            string howToSend;
+            try
+            {
+                Clipboard.SetText(request);
+                howToSend = "This note has been copied. Paste it into an email or message to whoever manages the database.";
+            }
+            catch (Exception ex)
+            {
+                ImportLogger.Log($"Copying the database request failed: {ex.Message}");
+                howToSend = "Send this note to whoever manages the database (select the text and copy it).";
+            }
+
+            using (var note = new SelectableMessageForm("Items Need Adding to the Database",
+                       howToSend + Environment.NewLine + Environment.NewLine + request))
+            {
+                note.ShowDialog(this);
+            }
+
+            return ResolveResult.NeedsDatabaseChanges;
+        }
+
+        /// <summary>
+        /// Loads the PDF label → column mapping from the database's ColumnMap table, creating the
+        /// table and seeding it from ColumnToTableMap.json the first time a database is opened.
+        /// If anything fails the map is left empty, so every order reports missing mappings and
+        /// nothing is inserted.
+        /// </summary>
+        private void LoadColumnMap()
+        {
+            columnToTableMap = new(StringComparer.OrdinalIgnoreCase);
+            userIgnoredLabels = new(StringComparer.OrdinalIgnoreCase);
+
+            try
+            {
+                var mapRepo = new ColumnMapRepository(connectionString);
+                mapRepo.EnsureTable();
+
+                if (mapRepo.IsEmpty())
+                    SeedColumnMap(mapRepo);
+
+                columnToTableMap = mapRepo.LoadActiveMap();
+                userIgnoredLabels = mapRepo.LoadIgnoredLabels();
+            }
+            catch (Exception ex)
+            {
+                ImportLogger.Log($"Failed to load column mappings from {dbPath}: {ex.Message}");
+                MessageBox.Show(
+                    $"The column mappings could not be loaded from the database.\n\n{ex.Message}\n\n" +
+                    "Orders cannot be imported until this is fixed.",
+                    "Column Mapping Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void SeedColumnMap(ColumnMapRepository mapRepo)
+        {
+            string jsonPath = ColumnMapLoader.DefaultPath;
+
+            if (!File.Exists(jsonPath))
+            {
+                ImportLogger.Log($"ColumnMap table is empty and {jsonPath} was not found; nothing to seed.");
+                MessageBox.Show(
+                    "This database has no column mappings yet, and the starter mapping file was not found:\n\n" +
+                    jsonPath,
+                    "No Column Mappings", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            var result = mapRepo.Seed(ColumnMapLoader.LoadEntries(jsonPath));
+
+            ImportLogger.Log($"Seeded ColumnMap in {dbPath} with {result.Inserted} mapping(s) from {jsonPath}.");
+            foreach (var dup in result.Duplicates)
+                ImportLogger.Log($"Seed skipped duplicate label \"{dup.PdfLabel}\" → {dup.TableName}.{dup.ColumnName}");
+
+            string message = $"Column mappings were copied into this database ({result.Inserted} mapping(s)).";
+            if (result.Duplicates.Count > 0)
+                message += $"\n\n{result.Duplicates.Count} duplicate label(s) were skipped. See the import log for details.";
+
+            MessageBox.Show(message, "Column Mappings Set Up", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         private string PromptForDatabasePath()
@@ -110,46 +291,66 @@ namespace BSH_Import_Utility
             ImportPdfFiles(dlg.FileNames);
         }
 
+        /// <summary>
+        /// Returns the PDFs to process: order forms as they are, and each picklist split into one
+        /// temporary PDF per order. Temporary files are added to tempFiles (the caller purges them)
+        /// and mapped back to their picklist in sourceFileMap.
+        /// </summary>
+        private List<string> ExpandPicklists(
+            IEnumerable<string> files,
+            List<string> tempFiles,
+            Dictionary<string, string> sourceFileMap)
+        {
+            var allFiles = new List<string>();
+
+            foreach (var file in files)
+            {
+                if (PdfSplitService.IsPicklist(file))
+                {
+                    int startPage = PdfSplitService.FindFirstOrderPage(file);
+
+                    if (startPage < 1)
+                    {
+                        MessageBox.Show(
+                            $"No individual orders found in:\n{file}",
+                            "No Orders Found",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Warning);
+                        continue;
+                    }
+
+                    var split = PdfSplitService.FlattenAndSplitTwoPages(file, startPage);
+                    allFiles.AddRange(split);
+                    tempFiles.AddRange(split);
+
+                    foreach (var s in split)
+                        sourceFileMap[s] = file;
+                }
+                else
+                {
+                    allFiles.Add(file);
+                }
+            }
+
+            return allFiles;
+        }
+
         private void ImportPdfFiles(IEnumerable<string>? files)
         {
             var fileList = files?.ToList() ?? new List<string>();
             var allFiles = new List<string>();
             var tempFiles = new List<string>();
             var duplicates = new List<string>();
+            var skippedForMappings = new List<string>();
             var sourceFileMap = new Dictionary<string, string>(); // temp file → original source file
 
+            // Disabled for the whole run: Application.DoEvents below would otherwise let a second
+            // click start another import in the middle of this one.
             ImportOrderForm.Enabled = false;
 
             try
             {
-                foreach (var file in fileList)
-                {
-                    if (PdfSplitService.IsPicklist(file))
-                    {
-                        int startPage = PdfSplitService.FindFirstOrderPage(file);
-
-                        if (startPage < 1)
-                        {
-                            MessageBox.Show(
-                                $"No individual orders found in:\n{file}",
-                                "No Orders Found",
-                                MessageBoxButtons.OK,
-                                MessageBoxIcon.Warning);
-                            continue;
-                        }
-
-                        var split = PdfSplitService.FlattenAndSplitTwoPages(file, startPage);
-                        allFiles.AddRange(split);
-                        tempFiles.AddRange(split);
-
-                        foreach (var s in split)
-                            sourceFileMap[s] = file;
-                    }
-                    else
-                    {
-                        allFiles.Add(file);
-                    }
-                }
+                allFiles.AddRange(ExpandPicklists(fileList, tempFiles, sourceFileMap));
 
                 int totalFiles = allFiles.Count;
                 int successfulImports = 0;
@@ -186,6 +387,21 @@ namespace BSH_Import_Utility
 
                     var outcome = _repo.InsertDataIntoDatabase(processedLines.ToArray(), displayFile);
 
+                    // Let the user fix unrecognized items, then retry the same order. Each attempt
+                    // runs in its own transaction, so a failed attempt leaves nothing behind. When some
+                    // items need adding to the database first, retry once so the skipped-order summary
+                    // lists only what is still missing, then stop asking.
+                    while (outcome.Status == InsertStatus.MissingColumnMappings)
+                    {
+                        var resolved = ResolveMappings(outcome, displayFile, processedLines);
+                        if (resolved == ResolveResult.NotSaved)
+                            break;
+
+                        outcome = _repo.InsertDataIntoDatabase(processedLines.ToArray(), displayFile);
+                        if (resolved == ResolveResult.NeedsDatabaseChanges)
+                            break;
+                    }
+
                     switch (outcome.Status)
                     {
                         case InsertStatus.DuplicateOrderNumber:
@@ -195,14 +411,8 @@ namespace BSH_Import_Utility
                         case InsertStatus.MissingColumnMappings:
                             string label = string.IsNullOrWhiteSpace(outcome.OrderNumber)
                                 ? "(Unknown)" : outcome.OrderNumber!;
-                            using (var dlg = new SelectableMessageForm(
-                                $"Missing Mapping — {label}",
-                                "Columns not mapped or missing in DB:"
-                                + Environment.NewLine + Environment.NewLine
-                                + string.Join(Environment.NewLine, outcome.MissingColumns)))
-                            {
-                                dlg.ShowDialog(this);
-                            }
+                            skippedForMappings.Add($"Order {label}: {string.Join("; ", outcome.MissingColumns)}");
+                            ImportLogger.Log($"Skipped Order {label} with unresolved items.");
                             break;
 
                         case InsertStatus.Error:
@@ -238,6 +448,7 @@ namespace BSH_Import_Utility
                             break;
                     }
 
+                    // The import runs on the UI thread; let the progress bar repaint between orders.
                     progressBarImport.Value++;
                     Application.DoEvents();
                 }
@@ -254,6 +465,16 @@ namespace BSH_Import_Utility
                         $"{duplicates.Count} order(s) already existed and were skipped:"
                         + Environment.NewLine + Environment.NewLine
                         + string.Join(Environment.NewLine, duplicates));
+                    dlg.ShowDialog(this);
+                }
+
+                if (skippedForMappings.Count > 0)
+                {
+                    using var dlg = new SelectableMessageForm(
+                        "Orders Skipped",
+                        $"{skippedForMappings.Count} order(s) were skipped because some items were not set up:"
+                        + Environment.NewLine + Environment.NewLine
+                        + string.Join(Environment.NewLine, skippedForMappings));
                     dlg.ShowDialog(this);
                 }
 
@@ -281,15 +502,126 @@ namespace BSH_Import_Utility
                     dbPath = openFileDialog.FileName;
                     Properties.Settings.Default.DatabasePath = dbPath;
                     Properties.Settings.Default.Save();
-                    UpdateWindowTitle();
+                    ConnectToDatabase();
                     MessageBox.Show($"Database path saved: {dbPath}");
                 }
             }
         }
 
-        private void btnShowIgnoredColumns_Click(object sender, EventArgs e)
+        private void columnMappingsToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            if (ImportConstants.IgnoredColumns.Count == 0)
+            MappingManagerForm dlg;
+            try
+            {
+                dlg = new MappingManagerForm(connectionString, _repo.GetSchema());
+            }
+            catch (Exception ex)
+            {
+                ImportLogger.Log($"Could not open the mapping manager: {ex.Message}");
+                MessageBox.Show(this, $"The column mappings could not be opened.\n\n{ex.Message}",
+                    "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            using (dlg)
+            {
+                dlg.ShowDialog(this);
+
+                if (dlg.MappingsChanged)
+                    ReloadMappings();
+            }
+        }
+
+        private void testPdfToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            using var open = new OpenFileDialog
+            {
+                Filter = "PDF Files|*.pdf",
+                Title = "Select Order Form(s) or Picklist(s) to Test",
+                Multiselect = true
+            };
+
+            if (open.ShowDialog(this) != DialogResult.OK) return;
+
+            var tempFiles = new List<string>();
+            var sourceFileMap = new Dictionary<string, string>();
+            var parsed = new List<(string DisplayFile, List<ProcessedLine> Lines)>();
+
+            try
+            {
+                Cursor = Cursors.WaitCursor;
+
+                foreach (var file in ExpandPicklists(open.FileNames, tempFiles, sourceFileMap))
+                {
+                    string displayFile = Path.GetFileName(sourceFileMap.TryGetValue(file, out var source) ? source : file);
+
+                    try
+                    {
+                        parsed.Add((displayFile, _pdfService.ParsePdfFile(file)));
+                    }
+                    catch (Exception ex)
+                    {
+                        Cursor = Cursors.Default;
+                        MessageBox.Show(this, $"{displayFile}\n\n{ex.Message}", "PDF Parse Error",
+                            MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, $"The PDF could not be read.\n\n{ex.Message}", "Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+            finally
+            {
+                Cursor = Cursors.Default;
+                PdfSplitService.PurgeGeneratedFiles(tempFiles);
+            }
+
+            if (parsed.Count == 0) return;
+
+            // Re-run against the current mappings each time, so the window can refresh
+            // after the user sets up unrecognized items.
+            List<OrderCheck> RunCheck()
+            {
+                var schema = _repo.GetSchema();
+                return parsed.Select(p =>
+                {
+                    string orderNumber = PdfLabelChecker.FindOrderNumber(p.Lines);
+                    bool exists = orderNumber.Length > 0 && _repo.OrderExists(orderNumber);
+                    var labels = PdfLabelChecker.Check(p.Lines, columnToTableMap, userIgnoredLabels, schema);
+                    return new OrderCheck(p.DisplayFile, orderNumber, exists, labels);
+                }).ToList();
+            }
+
+            bool SetUpItems(IReadOnlyList<UnresolvedLabel> items, string orderNumbers, string source) =>
+                ResolveLabels(items, orderNumbers, source,
+                    $"Testing {source} found {items.Count} item(s) that are not set up. Nothing has been imported.")
+                != ResolveResult.NotSaved;
+
+            PdfTestForm dlg;
+            try
+            {
+                dlg = new PdfTestForm(RunCheck, SetUpItems);
+            }
+            catch (Exception ex)
+            {
+                ImportLogger.Log($"Testing PDF(s) failed: {ex.Message}");
+                MessageBox.Show(this, $"The PDF could not be checked.\n\n{ex.Message}",
+                    "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            using (dlg)
+                dlg.ShowDialog(this);
+        }
+
+        private void ignoredColumnsToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            var ignored = ImportConstants.IgnoredColumns.Union(userIgnoredLabels, StringComparer.OrdinalIgnoreCase).ToList();
+
+            if (ignored.Count == 0)
             {
                 MessageBox.Show(
                     "No columns are currently ignored.",
@@ -302,7 +634,7 @@ namespace BSH_Import_Utility
 
             MessageBox.Show(
                 "The following columns are currently ignored:\n\n" +
-                string.Join("\n", ImportConstants.IgnoredColumns.OrderBy(c => c)),
+                string.Join("\n", ignored.OrderBy(c => c)),
                 "Ignored Columns",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information
@@ -332,6 +664,47 @@ namespace BSH_Import_Utility
         private void exitToolStripMenuItem_Click(object sender, EventArgs e)
         {
             Application.Exit();
+        }
+
+        // ---------- Help ----------
+
+        /// <summary>The user guide PDF, exported from the guide document and installed with the app.</summary>
+        private static readonly string UserGuidePath =
+            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Help", "BSH PDF Importer User Guide.pdf");
+
+        private void userGuideToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            if (!File.Exists(UserGuidePath))
+            {
+                MessageBox.Show(this,
+                    "The user guide isn't installed with this copy of the app. Contact your administrator.",
+                    "User Guide", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            try
+            {
+                Process.Start(UserGuidePath);
+            }
+            catch (Exception ex)
+            {
+                ImportLogger.Log($"Opening the user guide failed: {ex.Message}");
+                MessageBox.Show(this,
+                    $"The user guide could not be opened. Windows may not have a PDF viewer set up.\n\n{ex.Message}",
+                    "User Guide", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        private void aboutToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            // ClickOnce installs report the published version (e.g. 1.0.0.26); a local build reports the assembly version.
+            string version = System.Deployment.Application.ApplicationDeployment.IsNetworkDeployed
+                ? System.Deployment.Application.ApplicationDeployment.CurrentDeployment.CurrentVersion.ToString()
+                : Application.ProductVersion + " (not installed)";
+
+            MessageBox.Show(this,
+                $"BSH PDF Importer\n\nVersion {version}\nDatabase: {dbPath}",
+                "About", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
     }
 }
